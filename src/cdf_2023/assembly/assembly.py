@@ -431,7 +431,7 @@ class Assembly(FromToData, FromToJson):
                     line2 = Artist(option_elem.line).draw()
                     #results.append(True if distance_line_line(elem.line, option_elem.line, tol = 0.001) < assembly.globals['rod_radius']*2. + tolerance else False)
                     distance = self.shortest_distance_between_two_lines(line1, line2)
-                    results.append(True if distance < (self.globals['rod_radius'] * 2. + 0.015 + tolerance) else False)
+                    results.append(True if distance < (self.globals['rod_radius'] * 2. + self.globals['joint_dist'] + tolerance) else False)
                     dist_list.append(distance)
                 collision = True if True in results else False
                 dist = min(dist_list)
@@ -466,7 +466,7 @@ class Assembly(FromToData, FromToJson):
 
         d = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
 
-        while d < self.globals['rod_radius'] * 2.0 + 0.015:
+        while d < self.globals['rod_radius'] * 2.0 + self.globals['joint_dist']:
             i += 1
 
             if i >= max_i:
@@ -484,7 +484,7 @@ class Assembly(FromToData, FromToJson):
         max_i= 50
         d = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
 
-        while abs(d - (self.globals['rod_radius'] * 2.0 + 0.015)) > epsilon:
+        while abs(d - (self.globals['rod_radius'] * 2.0 + self.globals['joint_dist'])) > epsilon:
             i += 1
 
             if i >= max_i:
@@ -498,7 +498,7 @@ class Assembly(FromToData, FromToJson):
 
             # test distance
             d = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
-            if d > self.globals['rod_radius'] * 2.0 + 0.015:
+            if d > self.globals['rod_radius'] * 2.0 + self.globals['joint_dist']:
                 alpha = -alpha   # distance too large --> rotate back
             else:
                 alpha = alpha   # distance too small --> rotate in same direction
