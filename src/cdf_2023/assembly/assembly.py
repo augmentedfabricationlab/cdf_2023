@@ -228,6 +228,7 @@ class Assembly(FromToData, FromToJson):
         length = self.globals['rod_length']
         rf_unit_radius = self.globals['rf_unit_radius']
         rf_unit_offset = self.globals['rf_unit_offset']
+        joint_dist = self.globals['joint_dist']
 
         N = self.network.number_of_nodes()
 
@@ -236,37 +237,43 @@ class Assembly(FromToData, FromToJson):
         # Find the open connector of the current element
         if current_elem.connector_1_state:
             current_connector_frame = current_elem.connector_frame_1
-            c = -1
+           # c = -1
         else:
             current_connector_frame = current_elem.connector_frame_2
-            c = 1
+          #  c = 1
 
+        # angle for fitting joints between elements
+        #angle_rf_unit = math.asin((2 * radius + joint_dist)/(math.sqrt(3) * rf_unit_radius))
+        angle_rf_unit = math.asin((2 * radius + joint_dist)/rf_unit_radius)
         if mirror_unit:
-            a = b = 0
+            R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, -angle_rf_unit, current_connector_frame.point)
+            mirrored_frame = current_connector_frame.transformed(R0)
         else:
-            a = b = 0
+            R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, angle_rf_unit, current_connector_frame.point)
+            mirrored_frame = current_connector_frame.transformed(R0)
 
         new_elem = current_elem.copy()
-
+    
         if placed_by == 'robot':
-            R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(120), current_connector_frame.point)
+            R1 = Rotation.from_axis_and_angle(mirrored_frame.zaxis, math.radians(120), mirrored_frame.point)
             #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-rf_unit_radius+rf_unit_offset)/2.))
         else:
-            R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(240), current_connector_frame.point)
+            R1 = Rotation.from_axis_and_angle(mirrored_frame.zaxis, math.radians(240), mirrored_frame.point)
             #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-rf_unit_radius+rf_unit_offset)/2.))
 
         new_elem.transform(R1)
+        #new_elem.transform(R2)
 
         # Define a desired rotation around the parent element
         T_point = Translation.from_vector(current_elem.frame.xaxis)
         new_point = current_elem.frame.point.transformed(T_point)
-        R2 = Rotation.from_axis_and_angle(current_elem.frame.xaxis, math.radians(angle), new_point)
+        R3 = Rotation.from_axis_and_angle(current_elem.frame.xaxis, math.radians(angle), new_point)
 
         # Define a desired shift value along the parent element
         T3 = Translation.from_vector(current_elem.frame.xaxis*shift_value)
 
         # Transform the new element
-        new_elem.transform(R2*T3)
+        new_elem.transform(R3*T3)
 
         self.add_element(new_elem,
                          placed_by=placed_by,
@@ -279,7 +286,7 @@ class Assembly(FromToData, FromToJson):
                          is_built=False,
                          is_support=False)
 
-        # Add adges
+        # Add edges
         if unit_index == 0:
             self.network.add_edge(current_key, N, edge_to='neighbour')
         else:

@@ -648,6 +648,7 @@ class Element(object):
         length = assembly.globals['rod_length']
         rf_unit_radius = assembly.globals['rf_unit_radius']
         rf_unit_offset = assembly.globals['rf_unit_offset']
+        joint_dist = assembly.globals['joint_dist']
 
         option_elements = []
         #length = self._source.height
@@ -661,14 +662,21 @@ class Element(object):
             current_connector_frame = self.connector_frame_2
             c = 1
 
+        #angle_rf_unit = math.asin((2 * radius + joint_dist)/(math.sqrt(3) * rf_unit_radius))
+        angle_rf_unit = math.asin((2 * radius + joint_dist)/rf_unit_radius)
+
         if mirror_unit:
-            a = b = 0
+          #  a = b = 0
+            R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, -angle_rf_unit, current_connector_frame.point)
+            mirrored_frame = current_connector_frame.transformed(R0)
         else:
-            a = b = 0
+         #   a = b = 0
+            R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, angle_rf_unit, current_connector_frame.point)
+            mirrored_frame = current_connector_frame.transformed(R0)
 
         if current_connector_frame != None:
-            R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(120), current_connector_frame.point)
-            R2 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(240), current_connector_frame.point)
+            R1 = Rotation.from_axis_and_angle(mirrored_frame.zaxis, math.radians(120), mirrored_frame.point)
+            R2 = Rotation.from_axis_and_angle(mirrored_frame.zaxis, math.radians(240), mirrored_frame.point)
             e1 = self.transformed(R1)
             e2 = self.transformed(R2)
 
@@ -676,13 +684,13 @@ class Element(object):
             # new_point = self.frame.point.transformed(T_point)
             R3 = Rotation.from_axis_and_angle(self.frame.xaxis, math.radians(angle),self.frame.point)
 
-            T1 = Translation.from_vector(-e1.frame.xaxis*a*((length-rf_unit_radius+rf_unit_offset)/2.))
-            T2 = Translation.from_vector(-e2.frame.xaxis*b*((length-rf_unit_radius+rf_unit_offset)/2.))
+            #T1 = Translation.from_vector(-e1.frame.xaxis*a*((length-rf_unit_radius+rf_unit_offset)/2.))
+            #T2 = Translation.from_vector(-e2.frame.xaxis*b*((length-rf_unit_radius+rf_unit_offset)/2.))
 
             T3 = Translation.from_vector(self.frame.xaxis * shift_value)
 
-            e1.transform(R3*T1*T3)
-            e2.transform(R3*T2*T3)
+            e1.transform(R3*T3)
+            e2.transform(R3*T3)
 
             option_elements.append(e1)
             option_elements.append(e2)
@@ -741,12 +749,14 @@ class Element(object):
         current_option_frames = []
         if self.connector_1_state == True:
             p = self.connector_frame_1.point + Vector.Zaxis()*vector_vertical_offset
-            T = Translation.from_vector(self.connector_frame_1.yaxis*rf_unit_radius/2.)
+            #T = Translation.from_vector(self.connector_frame_1.yaxis*rf_unit_radius/2.)
+            T = Translation.from_vector(self.connector_frame_1.yaxis*rf_unit_radius/(2*math.sqrt(3)))
             current_option_frames.append(Frame(p, self.connector_frame_1.xaxis, self.connector_frame_1.yaxis).transformed(T))
 
         if self.connector_2_state == True:
             p = self.connector_frame_2.point + Vector.Zaxis()*vector_vertical_offset
-            T = Translation.from_vector(self.connector_frame_2.yaxis*rf_unit_radius/2.)
+            #T = Translation.from_vector(self.connector_frame_2.yaxis*rf_unit_radius/2.)
+            T = Translation.from_vector(self.connector_frame_2.yaxis*rf_unit_radius/(2*math.sqrt(3)))
             current_option_frames.append(Frame(p, self.connector_frame_2.xaxis, self.connector_frame_2.yaxis).transformed(T))
 
         if current_option_frames:
