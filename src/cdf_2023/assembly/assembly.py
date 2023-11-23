@@ -245,20 +245,20 @@ class Assembly(FromToData, FromToJson):
         # angle for fitting joints between elements
         #angle_rf_unit = math.asin((2 * radius + joint_dist)/(math.sqrt(3) * rf_unit_radius))
         angle_rf_unit = math.asin((2 * radius + joint_dist)/rf_unit_radius)
-        if mirror_unit:
-            R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, -angle_rf_unit, current_connector_frame.point)
-            mirrored_frame = current_connector_frame.transformed(R0)
-        else:
-            R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, angle_rf_unit, current_connector_frame.point)
-            mirrored_frame = current_connector_frame.transformed(R0)
-
+        if unit_index == 0:
+            if mirror_unit:
+                R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, -angle_rf_unit, current_connector_frame.point)
+            else:
+                R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, angle_rf_unit, current_connector_frame.point)
+            current_connector_frame.transform(R0)
+            
         new_elem = current_elem.copy()
     
         if placed_by == 'robot':
-            R1 = Rotation.from_axis_and_angle(mirrored_frame.zaxis, math.radians(120), mirrored_frame.point)
+            R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(120), current_connector_frame.point)
             #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-rf_unit_radius+rf_unit_offset)/2.))
         else:
-            R1 = Rotation.from_axis_and_angle(mirrored_frame.zaxis, math.radians(240), mirrored_frame.point)
+            R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(240), current_connector_frame.point)
             #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-rf_unit_radius+rf_unit_offset)/2.))
 
         new_elem.transform(R1)

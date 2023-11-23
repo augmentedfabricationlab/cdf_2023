@@ -668,11 +668,12 @@ class Element(object):
         if mirror_unit:
           #  a = b = 0
             R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, -angle_rf_unit, current_connector_frame.point)
-            mirrored_frame = current_connector_frame.transformed(R0)
+
         else:
          #   a = b = 0
             R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, angle_rf_unit, current_connector_frame.point)
-            mirrored_frame = current_connector_frame.transformed(R0)
+        
+        mirrored_frame = current_connector_frame.transformed(R0)
 
         if current_connector_frame != None:
             R1 = Rotation.from_axis_and_angle(mirrored_frame.zaxis, math.radians(120), mirrored_frame.point)
