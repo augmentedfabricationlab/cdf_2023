@@ -237,15 +237,23 @@ class Assembly(FromToData, FromToJson):
         # Find the open connector of the current element
         if current_elem.connector_1_state:
             current_connector_frame = current_elem.connector_frame_1
-           # c = -1
         else:
             current_connector_frame = current_elem.connector_frame_2
-          #  c = 1
 
         # angle for fitting joints between elements
-        #angle_rf_unit = math.asin((2 * radius + joint_dist)/(math.sqrt(3) * rf_unit_radius))
         angle_rf_unit = math.asin((2 * radius + joint_dist)/rf_unit_radius)
+        
         if unit_index == 0:
+            # Define a desired rotation around the parent element
+            T_point = Translation.from_vector(current_elem.frame.xaxis)
+            new_point = current_elem.frame.point.transformed(T_point)
+            R3 = Rotation.from_axis_and_angle(current_elem.frame.xaxis, math.radians(angle), new_point)
+
+            # Define a desired shift value along the parent element
+            T3 = Translation.from_vector(current_elem.frame.xaxis*shift_value)
+
+            current_connector_frame.transform(R3*T3)
+            
             if mirror_unit:
                 R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, -angle_rf_unit, current_connector_frame.point)
             else:
@@ -262,18 +270,17 @@ class Assembly(FromToData, FromToJson):
             #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-rf_unit_radius+rf_unit_offset)/2.))
 
         new_elem.transform(R1)
-        #new_elem.transform(R2)
 
-        # Define a desired rotation around the parent element
-        T_point = Translation.from_vector(current_elem.frame.xaxis)
-        new_point = current_elem.frame.point.transformed(T_point)
-        R3 = Rotation.from_axis_and_angle(current_elem.frame.xaxis, math.radians(angle), new_point)
+        # # Define a desired rotation around the parent element
+        # T_point = Translation.from_vector(current_elem.frame.xaxis)
+        # new_point = current_elem.frame.point.transformed(T_point)
+        # R3 = Rotation.from_axis_and_angle(current_elem.frame.xaxis, math.radians(angle), new_point)
 
-        # Define a desired shift value along the parent element
-        T3 = Translation.from_vector(current_elem.frame.xaxis*shift_value)
+        # # Define a desired shift value along the parent element
+        # T3 = Translation.from_vector(current_elem.frame.xaxis*shift_value)
 
-        # Transform the new element
-        new_elem.transform(R3*T3)
+        # # Transform the new element
+        # new_elem.transform(R3*T3)
 
         self.add_element(new_elem,
                          placed_by=placed_by,
