@@ -212,6 +212,7 @@ class Assembly(FromToData, FromToJson):
             self,
             current_key,
             mirror_unit=False,
+            unit_size=0.3,
             angle=0,
             shift_value=0,
             placed_by='human',
@@ -226,13 +227,13 @@ class Assembly(FromToData, FromToJson):
         """
         radius = self.globals['rod_radius']
         length = self.globals['rod_length']
-        rf_unit_radius = self.globals['rf_unit_radius']
         rf_unit_offset = self.globals['rf_unit_offset']
         joint_dist = self.globals['joint_dist']
 
         N = self.network.number_of_nodes()
 
         current_elem = self.network.node[current_key]['element']
+        current_element_frame = current_elem.frame
 
         # Find the open connector of the current element
         if current_elem.connector_1_state:
@@ -240,10 +241,17 @@ class Assembly(FromToData, FromToJson):
         else:
             current_connector_frame = current_elem.connector_frame_2
 
+
         # angle for fitting joints between elements
-        angle_rf_unit = math.asin((2 * radius + joint_dist)/rf_unit_radius)
+        angle_rf_unit = math.asin((2 * radius + joint_dist)/unit_size)
         
         if unit_index == 0:
+            #current_element_frame_copy = current_element_frame.transformed(T1*T2)
+            #current_connector_frame = current_element_frame_copy
+            T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2-rf_unit_offset))
+            T2 = Translation.from_vector(-current_connector_frame.yaxis*unit_size/(2*math.sqrt(3)))
+            current_connector_frame.transform(T1*T2)
+
             # Define a desired rotation around the parent element
             T_point = Translation.from_vector(current_elem.frame.xaxis)
             new_point = current_elem.frame.point.transformed(T_point)
@@ -261,26 +269,23 @@ class Assembly(FromToData, FromToJson):
             current_connector_frame.transform(R0)
             
         new_elem = current_elem.copy()
-    
+
+        # reset position of inactive connector
+        if current_elem.connector_1_state:
+            new_elem.connector_frame_2 = Frame(new_elem.frame.point,new_elem.frame.xaxis*-1, new_elem.frame.yaxis*-1)
+        else:
+            new_elem.connector_frame_1 = Frame(new_elem.frame.point,new_elem.frame.xaxis, new_elem.frame.yaxis)
+
+
         if placed_by == 'robot':
             R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(120), current_connector_frame.point)
-            #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-rf_unit_radius+rf_unit_offset)/2.))
+            #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-unit_size+rf_unit_offset)/2.))
         else:
             R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(240), current_connector_frame.point)
-            #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-rf_unit_radius+rf_unit_offset)/2.))
+            #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-unit_size+rf_unit_offset)/2.))
 
         new_elem.transform(R1)
 
-        # # Define a desired rotation around the parent element
-        # T_point = Translation.from_vector(current_elem.frame.xaxis)
-        # new_point = current_elem.frame.point.transformed(T_point)
-        # R3 = Rotation.from_axis_and_angle(current_elem.frame.xaxis, math.radians(angle), new_point)
-
-        # # Define a desired shift value along the parent element
-        # T3 = Translation.from_vector(current_elem.frame.xaxis*shift_value)
-
-        # # Transform the new element
-        # new_elem.transform(R3*T3)
 
         self.add_element(new_elem,
                          placed_by=placed_by,
@@ -756,6 +761,7 @@ class Assembly(FromToData, FromToJson):
     def close_rf_unit(self,
                       current_key,
                       mirror_unit,
+                      unit_size,
                       angle,
                       shift_value,
                       robot_name='AA',
@@ -776,6 +782,7 @@ class Assembly(FromToData, FromToJson):
                                                        mirror_unit=mirror_unit,
                                                        angle=angle,
                                                        shift_value=shift_value,
+                                                       unit_size=unit_size,
                                                        placed_by=placed_by,
                                                        robot_name='AA',
                                                        robot_AA_base_frame=robot_AA_base_frame,
@@ -791,6 +798,7 @@ class Assembly(FromToData, FromToJson):
                                                        mirror_unit=mirror_unit,
                                                        angle=angle,
                                                        shift_value=shift_value,
+                                                       unit_size=unit_size,
                                                        placed_by=placed_by,
                                                        robot_name='AA',
                                                        robot_AA_base_frame=robot_AA_base_frame,
@@ -843,6 +851,7 @@ class Assembly(FromToData, FromToJson):
                                                        mirror_unit=mirror_unit,
                                                        angle=angle,
                                                        shift_value=shift_value,
+                                                       unit_size=unit_size,
                                                        placed_by=placed_by,
                                                        robot_name=robot_name,
                                                        robot_AA_base_frame=robot_AA_base_frame,
@@ -1002,11 +1011,11 @@ class Assembly(FromToData, FromToJson):
         keys = [key for key, element in self.elements()]
         return [self.element(key).current_option_vectors(len) for key in keys]
 
-    def all_options_viz(self, rf_unit_radius):
+    def all_options_viz(self, unit_size):
         """Returns a list of frames.
         """
         keys = [key for key, element in self.elements()]
-        return [self.element(key).current_option_viz(rf_unit_radius) for key in keys]
+        return [self.element(key).current_option_viz(unit_size) for key in keys]
 
 
     def connectors(self, state='all'):
