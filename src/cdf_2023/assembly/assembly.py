@@ -235,21 +235,27 @@ class Assembly(FromToData, FromToJson):
         current_elem = self.network.node[current_key]['element']
         current_element_frame = current_elem.frame
 
+
         # Find the open connector of the current element
         if current_elem.connector_1_state:
             current_connector_frame = current_elem.connector_frame_1
+            current_joint_frame = current_elem.joint_frame_1
         else:
             current_connector_frame = current_elem.connector_frame_2
+            current_joint_frame = current_elem.joint_frame_2
 
 
         # angle for fitting joints between elements
-        angle_rf_unit = math.asin((2 * radius + joint_dist)/unit_size)
-        
+        #angle_rf_unit = math.asin((2 * radius + joint_dist)/unit_size)
+        angle_rf_unit = math.atan((2 * radius + joint_dist)/unit_size)
+        #angle_rf_unit = math.atan(math.sqrt(3)*(joint_dist/2+radius)/unit_size)
+        #xcoord = 0.085
         if unit_index == 0:
             #current_element_frame_copy = current_element_frame.transformed(T1*T2)
             #current_connector_frame = current_element_frame_copy
             T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2-rf_unit_offset))
-            T2 = Translation.from_vector(-current_connector_frame.yaxis*unit_size/(2*math.sqrt(3)))
+            T2 = Translation.from_vector(-current_connector_frame.yaxis*unit_size/(2*math.sqrt(3)*math.cos(angle_rf_unit)))
+            #T2 = Translation.from_vector(-current_connector_frame.yaxis*xcoord)
             current_connector_frame.transform(T1*T2)
 
             # Define a desired rotation around the parent element
@@ -267,6 +273,24 @@ class Assembly(FromToData, FromToJson):
             else:
                 R0 = Rotation.from_axis_and_angle(current_connector_frame.yaxis, angle_rf_unit, current_connector_frame.point)
             current_connector_frame.transform(R0)
+
+            # transform joint_frames according to connector_frames
+            #rad1 = unit_size/math.sqrt(3)*math.cos(angle_rf_unit)
+            T4 = Translation.from_vector(current_connector_frame.xaxis*(unit_size/2.))
+            T5 = Translation.from_vector(current_connector_frame.yaxis*unit_size/(2*math.sqrt(3))) 
+            #T4 = Translation.from_vector(current_connector_frame.yaxis*(unit_size/2.))
+            #T5 = Translation.from_vector(current_connector_frame.xaxis*unit_size*math.sqrt(3)/2.) 
+            if current_elem.connector_1_state:
+                current_elem.joint_frame_1 = Frame(current_connector_frame.point,current_connector_frame.xaxis, current_connector_frame.yaxis)
+                current_elem.joint_frame_1.transform(T4*T5)
+                #if not mirror_unit:
+                #    current_elem.joint_frame_1 = Frame(current_elem.joint_frame_1.point,current_elem.joint_frame_1.xaxis, current_elem.joint_frame_1.yaxis*-1)
+            else:
+                current_elem.joint_frame_2 = Frame(current_connector_frame.point,current_connector_frame.xaxis, current_connector_frame.yaxis)
+                current_elem.joint_frame_2.transform(T4*T5)
+                #if not mirror_unit:
+                #    current_elem.joint_frame_2 = Frame(current_elem.joint_frame_2.point,current_elem.joint_frame_2.xaxis, current_elem.joint_frame_2.yaxis*-1)
+
             
         new_elem = current_elem.copy()
 
@@ -296,7 +320,8 @@ class Assembly(FromToData, FromToJson):
                          frame_measured=frame_measured,
                          is_planned=True,
                          is_built=False,
-                         is_support=False)
+                         is_support=False,
+                         is_mirrored=mirror_unit)
 
         # Add edges
         if unit_index == 0:
@@ -870,7 +895,9 @@ class Assembly(FromToData, FromToJson):
                                                robot_AB_base_frame=robot_AB_base_frame,
                                                on_ground=False,
                                                unit_index=2,
-                                               frame_measured=None)
+                                               frame_measured=None,
+                                               is_mirrored=mirror_unit
+                                               )
                 keys_human = list((self.network.nodes_where({'element': my_new_elem})))
 
         N = self.network.number_of_nodes()
@@ -964,10 +991,14 @@ class Assembly(FromToData, FromToJson):
         open_connector_frame = self.element(key).connectors(state='open')[0]
         elem_frame = self.element(key).frame
 
+        #open_connector_frame = elem.connectors(state='open')[0]
+
         R = Rotation.from_axis_and_angle(elem_frame.xaxis, math.radians(angle), elem_frame.point)
 
         open_connector_frame_copy = open_connector_frame.transformed(R)
+
         open_connector_plane = Artist(open_connector_frame_copy).draw()
+        #open_connector_plane = Artist(open_connector_frame).draw()
 
         closest_point = input_geo.ClosestPoint(open_connector_plane.Origin)
         distance = closest_point.DistanceTo(open_connector_plane.Origin)
@@ -980,11 +1011,14 @@ class Assembly(FromToData, FromToJson):
 
         open_connector_frame = self.element(key).connectors(state='open')[0]
         elem_frame = self.element(key).frame
+        #open_connector_frame = elem.connectors(state='open')[0]
 
         R = Rotation.from_axis_and_angle(elem_frame.xaxis, math.radians(angle), elem_frame.point)
 
         open_connector_frame_copy = open_connector_frame.transformed(R)
+        #open_connector_frame_copy = open_connector_frame.transformed()
         open_connector_plane = Artist(open_connector_frame_copy).draw()
+        #open_connector_plane = Artist(open_connector_frame).draw()
 
         closest_point = input_geo.ClosestPoint(open_connector_plane.Origin)
 

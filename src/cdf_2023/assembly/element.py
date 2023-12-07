@@ -657,16 +657,21 @@ class Element(object):
 
         if self.connector_1_state == True:
             current_connector_frame = self.connector_frame_1
-            #c = -1
 
         if self.connector_2_state == True:
             current_connector_frame = self.connector_frame_2
-            #c = 1
         
         # create a copy of connector frame depending on unit size
         T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2-rf_unit_offset))
         T2 = Translation.from_vector(-current_connector_frame.yaxis*unit_size/(2*math.sqrt(3)))
         current_connector_frame_copy = current_connector_frame.transformed(T1*T2)
+
+        # Define a desired rotation around the parent element
+        # T_point = Translation.from_vector(self.frame.xaxis)
+        # new_point = self.frame.point.transformed(T_point)
+        R3 = Rotation.from_axis_and_angle(self.frame.xaxis, math.radians(angle),self.frame.point)
+        T3 = Translation.from_vector(self.frame.xaxis * shift_value)
+        current_connector_frame_copy.transform(R3*T3)
 
         # rotation angle of the unit itself
         angle_rf_unit = math.asin((2 * radius + joint_dist)/unit_size)
@@ -680,19 +685,30 @@ class Element(object):
         mirrored_frame = current_connector_frame_copy.transformed(R0)
 
         if current_connector_frame != None:
+
             R1 = Rotation.from_axis_and_angle(mirrored_frame.zaxis, math.radians(120), mirrored_frame.point)
             R2 = Rotation.from_axis_and_angle(mirrored_frame.zaxis, math.radians(240), mirrored_frame.point)
             e1 = self.transformed(R1)
+            e1_frame = mirrored_frame.transformed(R1)
             e2 = self.transformed(R2)
+            e2_frame = mirrored_frame.transformed(R2)
 
-            # T_point = Translation.from_vector(self.frame.xaxis)
+            if self.connector_1_state == True:
+                e1.connector_frame_1 = Frame(e1_frame.point,e1_frame.xaxis, e1_frame.yaxis)
+                e2.connector_frame_1 = Frame(e2_frame.point,e2_frame.xaxis, e2_frame.yaxis)
+
+            if self.connector_2_state == True:
+                e1.connector_frame_2 = Frame(e1_frame.point,e1_frame.xaxis, e1_frame.yaxis)
+                e2.connector_frame_2 = Frame(e2_frame.point,e2_frame.xaxis, e2_frame.yaxis)
+            
+            """# T_point = Translation.from_vector(self.frame.xaxis)
             # new_point = self.frame.point.transformed(T_point)
             R3 = Rotation.from_axis_and_angle(self.frame.xaxis, math.radians(angle),self.frame.point)
 
             T3 = Translation.from_vector(self.frame.xaxis * shift_value)
 
             e1.transform(R3*T3)
-            e2.transform(R3*T3)
+            e2.transform(R3*T3)"""
 
             option_elements.append(e1)
             option_elements.append(e2)
