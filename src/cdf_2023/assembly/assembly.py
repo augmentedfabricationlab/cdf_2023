@@ -8,7 +8,7 @@ import math
 import compas
 
 from copy import deepcopy
-from compas.geometry import Frame, Vector, Plane
+from compas.geometry import Frame, Vector, Plane, Line
 from compas.geometry import Transformation, Translation, Rotation
 from compas.geometry import intersection_line_plane
 from compas.geometry import distance_point_point, distance_line_line, distance_point_line
@@ -459,7 +459,9 @@ class Assembly(FromToData, FromToJson):
         # d = distance_line_line(l1, l2)
         # return d
         a, b, d = gh.CurveProximity(line1, line2)
-        return d
+        #line = Line(a,b)
+        line = gh.Line(a,b)
+        return d, line
 
     def collision_check(self, current_key, option_elems, tolerance):
         """Check for collisions with previously built elements.
