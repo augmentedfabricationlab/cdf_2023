@@ -73,7 +73,9 @@ class Assembly(FromToData, FromToJson):
 
         self.network = Network()
         self.network.attributes.update({
-            'name' : 'Assembly'})
+            'name' : 'Assembly',
+            'globals' : {}})
+    
 
         if attributes is not None:
             self.network.attributes.update(attributes)
@@ -110,6 +112,15 @@ class Assembly(FromToData, FromToJson):
     @name.setter
     def name(self, value):
         self.network.attributes['name'] = value
+
+    @property
+    def globals(self):
+        """dict: The globals of the assembly."""
+        return self.network.attributes.get('globals', None)
+
+    @globals.setter
+    def globals(self, dict):
+        self.network.attributes['globals'] = dict    
 
     def number_of_elements(self):
         """Compute the number of elements of the assembly.
@@ -240,21 +251,24 @@ class Assembly(FromToData, FromToJson):
         if current_elem.connector_1_state:
             current_connector_frame = current_elem.connector_frame_1
             current_joint_frame = current_elem.joint_frame_1
+            shift_value = -shift_value
         else:
             current_connector_frame = current_elem.connector_frame_2
             current_joint_frame = current_elem.joint_frame_2
 
 
+
         # angle for fitting joints between elements
         #angle_rf_unit = math.asin((2 * radius + joint_dist)/unit_size)
-        angle_rf_unit = math.atan((2 * radius + joint_dist)/unit_size)
+        #angle_rf_unit = math.atan((2 * radius + joint_dist)/unit_size)
         #angle_rf_unit = math.atan(math.sqrt(3)*(joint_dist/2+radius)/unit_size)
+        angle_rf_unit = math.asin((2 * radius + joint_dist)/(math.sqrt(3) * unit_size))
         #xcoord = 0.085
         if unit_index == 0:
             #current_element_frame_copy = current_element_frame.transformed(T1*T2)
             #current_connector_frame = current_element_frame_copy
-            T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2-rf_unit_offset))
-            T2 = Translation.from_vector(-current_connector_frame.yaxis*unit_size/(2*math.sqrt(3)*math.cos(angle_rf_unit)))
+            T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2*math.sqrt(3)-rf_unit_offset))
+            T2 = Translation.from_vector(-current_connector_frame.yaxis*unit_size/2)
             #T2 = Translation.from_vector(-current_connector_frame.yaxis*xcoord)
             current_connector_frame.transform(T1*T2)
 
@@ -276,8 +290,8 @@ class Assembly(FromToData, FromToJson):
 
             # transform joint_frames according to connector_frames
             #rad1 = unit_size/math.sqrt(3)*math.cos(angle_rf_unit)
-            T4 = Translation.from_vector(current_connector_frame.xaxis*(unit_size/2.))
-            T5 = Translation.from_vector(current_connector_frame.yaxis*unit_size/(2*math.sqrt(3))) 
+            T4 = Translation.from_vector(current_connector_frame.xaxis*(unit_size*math.sqrt(3)/2.))
+            T5 = Translation.from_vector(current_connector_frame.yaxis*unit_size/2.) 
             #T4 = Translation.from_vector(current_connector_frame.yaxis*(unit_size/2.))
             #T5 = Translation.from_vector(current_connector_frame.xaxis*unit_size*math.sqrt(3)/2.) 
             if current_elem.connector_1_state:

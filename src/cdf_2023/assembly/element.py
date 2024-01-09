@@ -657,13 +657,14 @@ class Element(object):
 
         if self.connector_1_state == True:
             current_connector_frame = self.connector_frame_1
+            shift_value = -shift_value
 
         if self.connector_2_state == True:
             current_connector_frame = self.connector_frame_2
         
         # create a copy of connector frame depending on unit size
-        T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2-rf_unit_offset))
-        T2 = Translation.from_vector(-current_connector_frame.yaxis*unit_size/(2*math.sqrt(3)))
+        T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2*math.sqrt(3)-rf_unit_offset))
+        T2 = Translation.from_vector(-current_connector_frame.yaxis*unit_size/2)
         current_connector_frame_copy = current_connector_frame.transformed(T1*T2)
 
         # Define a desired rotation around the parent element
@@ -674,7 +675,8 @@ class Element(object):
         current_connector_frame_copy.transform(R3*T3)
 
         # rotation angle of the unit itself
-        angle_rf_unit = math.asin((2 * radius + joint_dist)/unit_size)
+        angle_rf_unit = math.asin((2 * radius + joint_dist)/(math.sqrt(3) * unit_size))
+        #angle_rf_unit = math.asin((2 * radius + joint_dist)/unit_size)
 
         if mirror_unit:
             R0 = Rotation.from_axis_and_angle(current_connector_frame_copy.yaxis, -angle_rf_unit, current_connector_frame_copy.point)
