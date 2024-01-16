@@ -88,6 +88,8 @@ class Assembly(FromToData, FromToJson):
             'is_support' : False,
             'robot_name' : 'AA',
             'is_held_by_robot' : False,
+            #'key_held_by_robot': None,
+            #'stabilizing_robot' : 'AB',
             'robot_AA_base_frame' : False,
             'robot_AB_base_frame' : False,
             'frame_measured':False
@@ -524,7 +526,7 @@ class Assembly(FromToData, FromToJson):
         i = 0
         max_i = 25
 
-        d = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
+        d, line = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
 
         while d < self.globals['rod_radius'] * 2.0 + self.globals['joint_dist']:
             i += 1
@@ -538,11 +540,11 @@ class Assembly(FromToData, FromToJson):
             R = rg.Transform.Rotation(alpha, rot_axis, rot_point)
             elem_line1.Transform(R)
 
-            d = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
+            d, line = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
 
         i = 0
         max_i= 50
-        d = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
+        d, line = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
 
         while abs(d - (self.globals['rod_radius'] * 2.0 + self.globals['joint_dist'])) > epsilon:
             i += 1
@@ -557,7 +559,7 @@ class Assembly(FromToData, FromToJson):
                 alpha = -alpha   # invert direction for counter clockwise rotation
 
             # test distance
-            d = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
+            d, line = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
             if d > self.globals['rod_radius'] * 2.0 + self.globals['joint_dist']:
                 alpha = -alpha   # distance too large --> rotate back
             else:
@@ -570,6 +572,26 @@ class Assembly(FromToData, FromToJson):
             rot_angle += alpha
 
         return math.degrees(rot_angle)
+
+    def delete_element(self, key):
+        """Delete an element from the assembly.
+
+        Parameters
+        ----------
+        key : hashable
+            The identifier of the element.
+
+        Returns
+        -------
+        None
+        """
+        neighbours = list(self.network.neighbors(key))
+
+        for nkey in neighbours:
+            self.network.delete_edge(key, nkey)
+
+        self.network.delete_node(key)
+
 
     def add_third_element(self, elem, elem1, elem2, point1, point2, shift_value, epsilon):
         """
@@ -722,11 +744,14 @@ class Assembly(FromToData, FromToJson):
             # l = #Length of the Rods [m]
             # r = #Radius of the Pipe Elements
 
+            # define the zero plane for displaying
+            z_0 = min([p[2] for p in sp])
+
 
             # Step 1: Calculate single Resultants
             vol = l * math.pi * r**2 #Volume Vector for Rods; Material weight is considered as constant
-            cp0 = [(p[0], p[1], 0) for p in cp] #Planar Center Points of the Resultant
-            sp = [(p[0], p[1], 0) for p in sp] #Make Supports planar
+            cp0 = [(p[0], p[1], z_0) for p in cp] #Planar Center Points of the Resultant
+            sp = [(p[0], p[1], z_0) for p in sp] #Make Supports planar
 
 
             # Step 2: Calculate the Resultant for each element
@@ -743,11 +768,12 @@ class Assembly(FromToData, FromToJson):
                 res_pos_x_loc = res_pos_x / (vol*(i+1)) # Position of Resultant in x-dir
                 res_pos_y_loc = res_pos_y / (vol*(i+1)) # Position of Resultant in y-dir
 
-                rp = rs.AddPoint(res_pos_x_loc, res_pos_y_loc, 0)
+                rp = rs.AddPoint(res_pos_x_loc, res_pos_y_loc, z_0)
 
                 # Lever Arm for a single support
                 if len(sp) == 1:
-                    la = rs.Distance(rp, sp)
+                    la = rs.Distance(rp, sp[0])
+                    l = sp[0]
 
                 # Lever Arm for two supports
                 if len(sp) == 2:
@@ -767,37 +793,64 @@ class Assembly(FromToData, FromToJson):
             la = 'No Input'
             rp = 'No Input'
 
-        return([la, rp])
+        return([la, rp, l])
 
-    def calculate_local_equilibrium_in_all_branches(self, current_key, elem_options):
+    def calculate_local_equilibrium_in_all_branches(self, current_key, elem_options, robot_holding = False):
+        
+        #robot_holding = True
+        support_geo = self.support
 
         # Identify the connected elements (branches) in the assembly.
         branches = connected_components(self.network.adjacency)
+        support_keys = list(self.network.nodes_where({'is_support':True}))
 
         stability_feedback = []
         lever_arm_branches = []
         resultant_branches = []
+        sp_branches = []
+        sp_planar_branches = []
+        #sp = []
+
+        # cp = Center Points of the individual elements of one branch
+        # sp = Planar Supports of the branch
 
         for i, branch in enumerate(branches):
+            sp = []
+            #sp = []
+            # the midpoints - temporary
+            #sp = [Artist(self.element(bkey).line.midpoint).draw() for bkey in branch if bkey in support_keys]
+            
+            # The intersection of the supporting elements in the branch with foundation
+            sp_line = [Artist(self.element(bkey).line).draw() for bkey in branch if bkey in support_keys]
+            for line in sp_line:
+                int_pt = gh.BrepXLine(support_geo,line)[1]
+                if int_pt != None:
+                    sp.append(int_pt[1])           
 
             # The mid points of the elements in one branch
             cp = [Artist(self.element(bkey).line.midpoint).draw() for bkey in branch]
 
             # Add option to branch
             if current_key in branch:
-                cp += [Artist(elem_options.line.midpoint).draw() for elem_options in elem_options]
-            sp = [Artist(self.element(branch[0]).line.end).draw()]
+                cp += [Artist(elem_option.line.midpoint).draw() for elem_option in elem_options]
+                if robot_holding:
+                    #first element in the option - placed by robot, thus considered as support
+                    sp.append(Artist(elem_options[0].line.midpoint).draw())
+                #    sp += [Artist(elem_options.line.midpoint).draw() for elem_options in elem_options]
+            
 
             # calculate local equilibrium (level arm) and the resultant point of the selected option elements
-            lever_arm, resultant_point = self.calculate_local_equilibrium_in_a_branch(cp, sp, self.globals['rod_length'], self.globals['rod_radius'])
+            lever_arm, resultant_point, sp_position_planar = self.calculate_local_equilibrium_in_a_branch(cp, sp, self.globals['rod_length'], self.globals['rod_radius'])
 
             resultant_point = rs.coerce3dpoint(resultant_point)
             resultant_line = rg.Line(resultant_point, rg.Vector3d.ZAxis, 0.1)
 
-            lever_arm_branches.append(lever_arm[0])
+            lever_arm_branches.append(lever_arm)
             resultant_branches.append(resultant_line)
+            sp_branches += sp
+            sp_planar_branches.append(sp_position_planar)
 
-        return lever_arm_branches, resultant_branches
+        return lever_arm_branches, resultant_branches, sp_branches, sp_planar_branches
 
     def close_rf_unit(self,
                       current_key,
