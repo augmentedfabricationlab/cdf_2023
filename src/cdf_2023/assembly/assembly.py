@@ -486,6 +486,36 @@ class Assembly(FromToData, FromToJson):
         collision = False
         results = []
         dist_list = []
+        dist = 0
+        dist_elem = 0
+        short_line = 0
+
+        for key, elem in self.elements():
+            if key != current_key:
+                line1 = Artist(elem.line).draw()
+                for option_elem, i in zip (option_elems, range(len(option_elems))) :
+                    line2 = Artist(option_elem.line).draw()
+                    distance, dist_line = self.shortest_distance_between_two_lines(line1, line2)
+                    results.append(True if distance < (self.globals['rod_radius'] * 2. + tolerance) else False)
+                    dist_list.append([distance,[key,option_elem], dist_line])
+                collision = True if True in results else False
+                dist_list_sorted = sorted(dist_list, key=lambda x: x[0])
+                #dist = min(dist_list)
+                dist = dist_list_sorted[0][0]
+                dist_elem = dist_list_sorted[0][1]
+                short_line = dist_list_sorted[0][2]
+
+        return collision, dist, dist_elem, short_line
+
+
+
+    """def collision_check(self, current_key, option_elems, tolerance):
+        Check for collisions with previously built elements.
+        
+
+        collision = False
+        results = []
+        dist_list = []
         for key, elem in self.elements():
             if key != current_key:
                 line1 = Artist(elem.line).draw()
@@ -497,7 +527,7 @@ class Assembly(FromToData, FromToJson):
                     dist_list.append(distance)
                 collision = True if True in results else False
                 dist = min(dist_list)
-        return collision, dist
+        return collision, dist"""
 
     def check_ground_collision(self, option_elems):
         """Check if an element touches the ground.
@@ -795,13 +825,14 @@ class Assembly(FromToData, FromToJson):
 
         return([la, rp, l])
 
-    def calculate_local_equilibrium_in_all_branches(self, current_key, elem_options, robot_holding = False):
+    def calculate_local_equilibrium_in_all_branches(self, current_key, elem_options, la_limit, branches = None):
         
-        #robot_holding = True
+        robot_holding = False
         support_geo = self.support
 
         # Identify the connected elements (branches) in the assembly.
-        branches = connected_components(self.network.adjacency)
+        if branches == None:
+            branches = connected_components(self.network.adjacency)
         support_keys = list(self.network.nodes_where({'is_support':True}))
 
         stability_feedback = []
@@ -832,15 +863,27 @@ class Assembly(FromToData, FromToJson):
 
             # Add option to branch
             if current_key in branch:
-                cp += [Artist(elem_option.line.midpoint).draw() for elem_option in elem_options]
-                if robot_holding:
-                    #first element in the option - placed by robot, thus considered as support
-                    sp.append(Artist(elem_options[0].line.midpoint).draw())
-                #    sp += [Artist(elem_options.line.midpoint).draw() for elem_options in elem_options]
-            
+                cp += [Artist(elem_option.line.midpoint).draw() for elem_option in elem_options]          
 
             # calculate local equilibrium (level arm) and the resultant point of the selected option elements
             lever_arm, resultant_point, sp_position_planar = self.calculate_local_equilibrium_in_a_branch(cp, sp, self.globals['rod_length'], self.globals['rod_radius'])
+
+            if lever_arm > la_limit:
+                if current_key in branch:
+                    # calculate stability for the case, when robot is holding
+                    sp.append(Artist(elem_options[0].line.midpoint).draw())
+                    lever_arm, resultant_point, sp_position_planar = self.calculate_local_equilibrium_in_a_branch(cp, sp, self.globals['rod_length'], self.globals['rod_radius'])
+                    
+                    if lever_arm > la_limit:
+                        feedback = 'Branch {} is too big, even when it is held by robot. Try out different option'.format(i)
+                    else:
+                        feedback = "Branch {} should be held by robot".format(i)
+
+                else:
+                    feedback = 'Branch {} is too big. Try to connect it with other branches'.format(i)
+            else:
+                feedback = "Branch {} - self-supporting".format(i)
+
 
             resultant_point = rs.coerce3dpoint(resultant_point)
             resultant_line = rg.Line(resultant_point, rg.Vector3d.ZAxis, 0.1)
@@ -849,8 +892,9 @@ class Assembly(FromToData, FromToJson):
             resultant_branches.append(resultant_line)
             sp_branches += sp
             sp_planar_branches.append(sp_position_planar)
+            stability_feedback.append(feedback)
 
-        return lever_arm_branches, resultant_branches, sp_branches, sp_planar_branches
+        return lever_arm_branches, resultant_branches, sp_branches, sp_planar_branches, stability_feedback
 
     def close_rf_unit(self,
                       current_key,
@@ -911,7 +955,9 @@ class Assembly(FromToData, FromToJson):
                       mirror_unit,
                       angle,
                       shift_value,
+                      unit_size,
                       new_elem,
+                      option_elem_num,
                       robot_name = 'AA',
                       robot_AA_base_frame = None,
                       robot_AB_base_frame = None,
@@ -919,7 +965,7 @@ class Assembly(FromToData, FromToJson):
                       frame_measured=None):
         """Join to branches by adding three elements.
         """
-
+        #option_elem_num = 0  # number of the element in the generated option which is touching other element
         keys_robot = []
 
         for i in range(3):
@@ -930,6 +976,7 @@ class Assembly(FromToData, FromToJson):
                                                        mirror_unit=mirror_unit,
                                                        angle=angle,
                                                        shift_value=shift_value,
+                                                       unit_size=unit_size,
                                                        placed_by=placed_by,
                                                        robot_name=robot_name,
                                                        robot_AA_base_frame=robot_AA_base_frame,
@@ -955,42 +1002,66 @@ class Assembly(FromToData, FromToJson):
                                                        frame_measured=None)
                 keys_human = list((self.network.nodes_where({'element': my_new_elem})))
             if i == 2:
-                placed_by = 'human'
-                #frame_id = None
-                my_new_elem = self.add_element(new_elem,
-                                               placed_by=placed_by,
-                                               robot_name=robot_name,
-                                               robot_AA_base_frame=robot_AA_base_frame,
-                                               robot_AB_base_frame=robot_AB_base_frame,
-                                               on_ground=False,
-                                               unit_index=2,
-                                               frame_measured=None,
-                                               is_mirrored=mirror_unit
-                                               )
-                keys_human = list((self.network.nodes_where({'element': my_new_elem})))
+                if new_elem != None:
+                    placed_by = 'human'
+                    #frame_id = None
+                    my_new_elem = self.add_element(new_elem,
+                                                placed_by=placed_by,
+                                                robot_name=robot_name,
+                                                robot_AA_base_frame=robot_AA_base_frame,
+                                                robot_AB_base_frame=robot_AB_base_frame,
+                                                on_ground=False,
+                                                unit_index=2,
+                                                frame_measured=None,
+                                                is_mirrored=mirror_unit
+                                                )
+                    keys_human = list((self.network.nodes_where({'element': my_new_elem})))
 
         N = self.network.number_of_nodes()
 
-        d1 = distance_point_point(new_elem.line.end, self.element(keys_pair[1]).frame.point)
-        d2 = distance_point_point(new_elem.line.start, self.element(keys_pair[1]).frame.point)
+        if new_elem != None:
+            if option_elem_num == 0:
+                N_con = N - 3
+            else:
+                N_con = N - 2
 
-        if d1 < d2:
-            self.element(N-1).connector_1_state = False
+            # check which connector of the third elemement should stay open
+            d1 = distance_point_point(new_elem.line.end, self.element(keys_pair[1]).frame.point)
+            d2 = distance_point_point(new_elem.line.start, self.element(keys_pair[1]).frame.point)
+
+            if d1 < d2:
+                self.element(N-1).connector_1_state = False
+            else:
+                self.element(N-1).connector_2_state = False
+
+            self.element(N_con).connector_1_state = False
+            self.element(N_con).connector_2_state = False
+            self.element(keys_pair[1]).connector_1_state = False
+            self.element(keys_pair[1]).connector_2_state = False
+
+            # connect element in the network
+            self.network.add_edge(N_con, N-1, edge_to='neighbour')
+            self.network.add_edge(N_con, keys_pair[1], edge_to='neighbour')
+            self.network.add_edge(N-1, keys_pair[1], edge_to='neighbour')
+
         else:
-            self.element(N-1).connector_2_state = False
+            if option_elem_num == 0:
+                N_con = N - 2
+            else:
+                N_con = N - 1
 
-        self.element(N-2).connector_1_state = False
-        self.element(N-2).connector_2_state = False
-        self.element(keys_pair[1]).connector_1_state = False
-        self.element(keys_pair[1]).connector_2_state = False
+            # leave conncectors open if there is no 3rd element
+            #self.element(N_con).connector_1_state = False
+            #self.element(N_con).connector_2_state = False
+            #self.element(keys_pair[1]).connector_1_state = False
+            #self.element(keys_pair[1]).connector_2_state = False
 
-        self.network.add_edge(N-2, N-1, edge_to='neighbour')
-        self.network.add_edge(N-2, keys_pair[1], edge_to='neighbour')
-        self.network.add_edge(N-1, keys_pair[1], edge_to='neighbour')
+            # connect element in the network
+            self.network.add_edge(N_con, keys_pair[1], edge_to='neighbour')
 
         keys_dict = {'keys_human': keys_human, 'keys_robot':keys_robot}
 
-        return keys_dict, d1,d2
+        return keys_dict
 
     def parent_key(self, point, within_dist):
         """Return the parent key of a tracked object.
