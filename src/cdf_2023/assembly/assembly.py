@@ -6,6 +6,7 @@ import json
 import os
 import math
 import compas
+import copy
 
 from copy import deepcopy
 from compas.geometry import Frame, Vector, Plane, Line
@@ -87,9 +88,9 @@ class Assembly(FromToData, FromToJson):
             'placed_by' : 'human',
             'is_support' : False,
             'robot_name' : 'AA',
-            'is_held_by_robot' : False,
-            #'key_held_by_robot': None,
-            #'stabilizing_robot' : 'AB',
+            #'is_held_by_robot' : False,
+            'key_held_by_robot': None,
+            'stabilizing_robot' : None,
             'robot_AA_base_frame' : False,
             'robot_AB_base_frame' : False,
             'frame_measured':False
@@ -199,6 +200,36 @@ class Assembly(FromToData, FromToJson):
         """Clear all the assembly data."""
         self.network.clear()
 
+    def robot_status(self):
+        """Get robots' status"""
+
+        status_robot_AA = 'FREE'
+        status_robot_AB = 'FREE'
+
+        N = self.network.number_of_nodes()
+        r_stabilizing = self.network.node_attribute(N-1, 'stabilizing_robot')
+
+
+        if r_stabilizing == 'AA':
+            status_robot_AA = 'Stabilizing'
+        if r_stabilizing == 'AB':
+            status_robot_AB = 'Stabilizing'
+            
+        return status_robot_AA, status_robot_AB
+    
+    def get_free_robot_name(self):
+        """Get free robot's name """
+
+        status_robot_AA, status_robot_AB = self.robot_status()
+
+        if status_robot_AA == 'FREE':
+            robot_name = 'AA'
+        if status_robot_AB == 'FREE':
+            robot_name = 'AB'
+
+        return robot_name
+
+
     def add_element(self, element, key=None, attr_dict={}, **kwattr):
         """Add an element to the assembly.
 
@@ -230,6 +261,8 @@ class Assembly(FromToData, FromToJson):
             shift_value=0,
             placed_by='human',
             robot_name='AA',
+            key_held_by_robot=None,
+            stabilizing_robot=None,
             robot_AA_base_frame=None,
             robot_AB_base_frame=None,
             on_ground=False,
@@ -330,6 +363,8 @@ class Assembly(FromToData, FromToJson):
         self.add_element(new_elem,
                          placed_by=placed_by,
                          robot_name=robot_name,
+                         key_held_by_robot=key_held_by_robot,
+                         stabilizing_robot=stabilizing_robot,
                          robot_AA_base_frame=robot_AA_base_frame,
                          robot_AB_base_frame=robot_AB_base_frame,
                          on_ground=on_ground,
@@ -840,6 +875,8 @@ class Assembly(FromToData, FromToJson):
         resultant_branches = []
         sp_branches = []
         sp_planar_branches = []
+        key_held_by_robot = None
+        stabilizing_robot = None
         #sp = []
 
         # cp = Center Points of the individual elements of one branch
@@ -871,18 +908,53 @@ class Assembly(FromToData, FromToJson):
             if lever_arm > la_limit:
                 if current_key in branch:
                     # calculate stability for the case, when robot is holding
-                    sp.append(Artist(elem_options[0].line.midpoint).draw())
-                    lever_arm, resultant_point, sp_position_planar = self.calculate_local_equilibrium_in_a_branch(cp, sp, self.globals['rod_length'], self.globals['rod_radius'])
+
+                    # check if structure is stabilized at last step
+                    N = self.network.number_of_nodes()
+                    hold_elem = self.network.node_attribute(N-1, 'key_held_by_robot')
+                    stabilizing_robot = self.network.node_attribute(N-1, 'stabilizing_robot')
+
+                    if hold_elem != None and hold_elem in branch:  
+
+                        ## CASE 1 - current
+                        sp_1 = sp[:]
+                        sp_1.append(Artist(elem_options[0].line.midpoint).draw())
+                        lever_arm_1, resultant_point_1, sp_position_planar_1 = self.calculate_local_equilibrium_in_a_branch(cp, sp_1, self.globals['rod_length'], self.globals['rod_radius'])
+
+                        
+                        ## CASE 2 - last placed
+                        sp_2 = sp[:]
+                        sp_2.append(Artist(self.element(hold_elem).line.midpoint).draw())
+                        lever_arm_2, resultant_point_2, sp_position_planar_2 = self.calculate_local_equilibrium_in_a_branch(cp, sp_2, self.globals['rod_length'], self.globals['rod_radius'])                    
+
+                        # select smaller la
+                        if lever_arm_1 <= lever_arm_2:
+                            lever_arm, resultant_point, sp, sp_position_planar = lever_arm_1, resultant_point_1, sp_1, sp_position_planar_1
+                            key_hold = "current"
+                            key_held_by_robot = N # when first element is placed by robot
+                            stabilizing_robot = self.get_free_robot_name()
+                        else:
+                            lever_arm, resultant_point, sp, sp_position_planar = lever_arm_2, resultant_point_2, sp_2, sp_position_planar_2
+                            key_hold = "last placed (key {})".format(hold_elem)
+                            key_held_by_robot = hold_elem
                     
-                    if lever_arm > la_limit:
-                        feedback = 'Branch {} is too big, even when it is held by robot. Try out different option'.format(i)
                     else:
-                        feedback = "Branch {} should be held by robot".format(i)
+                        ## CASE 1 - current
+                        sp.append(Artist(elem_options[0].line.midpoint).draw())
+                        lever_arm, resultant_point, sp_position_planar = self.calculate_local_equilibrium_in_a_branch(cp, sp, self.globals['rod_length'], self.globals['rod_radius'])
+                        key_hold = "current" 
+                        key_held_by_robot = N # when first element is placed by robot
+                        stabilizing_robot = self.get_free_robot_name()
+
+                    if lever_arm > la_limit:
+                        feedback = 'Branch {}: unstable'.format(i)
+                    else:
+                        feedback = "Branch {}: {} stabilized".format(i, key_hold)
 
                 else:
-                    feedback = 'Branch {} is too big. Try to connect it with other branches'.format(i)
+                    feedback = 'Branch {}: unstable'.format(i)
             else:
-                feedback = "Branch {} - self-supporting".format(i)
+                feedback = "Branch {}: self-supporting".format(i)
 
 
             resultant_point = rs.coerce3dpoint(resultant_point)
@@ -894,7 +966,7 @@ class Assembly(FromToData, FromToJson):
             sp_planar_branches.append(sp_position_planar)
             stability_feedback.append(feedback)
 
-        return lever_arm_branches, resultant_branches, sp_branches, sp_planar_branches, stability_feedback
+        return lever_arm_branches, resultant_branches, sp_branches, sp_planar_branches, stability_feedback, key_held_by_robot, stabilizing_robot
 
     def close_rf_unit(self,
                       current_key,
@@ -902,7 +974,9 @@ class Assembly(FromToData, FromToJson):
                       unit_size,
                       angle,
                       shift_value,
-                      robot_name='AA',
+                      robot_name,
+                      key_held_by_robot=None,
+                      stabilizing_robot=None,
                       robot_AA_base_frame=None,
                       robot_AB_base_frame=None,
                       on_ground=False,
@@ -922,7 +996,9 @@ class Assembly(FromToData, FromToJson):
                                                        shift_value=shift_value,
                                                        unit_size=unit_size,
                                                        placed_by=placed_by,
-                                                       robot_name='AA',
+                                                       robot_name=robot_name,
+                                                       key_held_by_robot=key_held_by_robot,
+                                                       stabilizing_robot=stabilizing_robot,
                                                        robot_AA_base_frame=robot_AA_base_frame,
                                                        robot_AB_base_frame=robot_AB_base_frame,
                                                        on_ground=False,
@@ -938,7 +1014,9 @@ class Assembly(FromToData, FromToJson):
                                                        shift_value=shift_value,
                                                        unit_size=unit_size,
                                                        placed_by=placed_by,
-                                                       robot_name='AA',
+                                                       robot_name=robot_name,
+                                                       key_held_by_robot=key_held_by_robot,
+                                                       stabilizing_robot=stabilizing_robot,
                                                        robot_AA_base_frame=robot_AA_base_frame,
                                                        robot_AB_base_frame=robot_AB_base_frame,
                                                        on_ground=False,
@@ -959,6 +1037,8 @@ class Assembly(FromToData, FromToJson):
                       new_elem,
                       option_elem_num,
                       robot_name = 'AA',
+                      key_held_by_robot=None,
+                      stabilizing_robot=None,
                       robot_AA_base_frame = None,
                       robot_AB_base_frame = None,
                       on_ground=False,
@@ -979,6 +1059,8 @@ class Assembly(FromToData, FromToJson):
                                                        unit_size=unit_size,
                                                        placed_by=placed_by,
                                                        robot_name=robot_name,
+                                                       key_held_by_robot=key_held_by_robot,
+                                                       stabilizing_robot=stabilizing_robot,
                                                        robot_AA_base_frame=robot_AA_base_frame,
                                                        robot_AB_base_frame=robot_AB_base_frame,
                                                        on_ground=False,
@@ -995,6 +1077,8 @@ class Assembly(FromToData, FromToJson):
                                                        unit_size=unit_size,
                                                        placed_by=placed_by,
                                                        robot_name=robot_name,
+                                                       key_held_by_robot=key_held_by_robot,
+                                                       stabilizing_robot=stabilizing_robot,
                                                        robot_AA_base_frame=robot_AA_base_frame,
                                                        robot_AB_base_frame=robot_AB_base_frame,
                                                        on_ground=False,
