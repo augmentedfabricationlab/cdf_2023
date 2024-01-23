@@ -589,7 +589,7 @@ class Assembly(FromToData, FromToJson):
             alpha = -alpha
 
         i = 0
-        max_i = 25
+        max_i = 100
 
         d, line = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
 
@@ -1036,9 +1036,9 @@ class Assembly(FromToData, FromToJson):
                       unit_size,
                       new_elem,
                       option_elem_num,
-                      robot_name = 'AA',
-                      key_held_by_robot=None,
-                      stabilizing_robot=None,
+                      robot_name,
+                      key_held_by_robot,
+                      stabilizing_robot,
                       robot_AA_base_frame = None,
                       robot_AB_base_frame = None,
                       on_ground=False,
