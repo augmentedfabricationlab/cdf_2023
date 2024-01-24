@@ -273,7 +273,7 @@ class Assembly(FromToData, FromToJson):
         """
         radius = self.globals['rod_radius']
         length = self.globals['rod_length']
-        rf_unit_offset = self.globals['rf_unit_offset']
+        #rf_unit_offset = self.globals['rf_unit_offset']
         joint_dist = self.globals['joint_dist']
 
         N = self.network.number_of_nodes()
@@ -302,7 +302,8 @@ class Assembly(FromToData, FromToJson):
         if unit_index == 0:
             #current_element_frame_copy = current_element_frame.transformed(T1*T2)
             #current_connector_frame = current_element_frame_copy
-            T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2*math.sqrt(3)-rf_unit_offset))
+            #T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2*math.sqrt(3)-rf_unit_offset))
+            T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2*math.sqrt(3)))
             T2 = Translation.from_vector(-current_connector_frame.yaxis*unit_size/2)
             #T2 = Translation.from_vector(-current_connector_frame.yaxis*xcoord)
             current_connector_frame.transform(T1*T2)
@@ -884,16 +885,21 @@ class Assembly(FromToData, FromToJson):
 
         for i, branch in enumerate(branches):
             sp = []
-            #sp = []
-            # the midpoints - temporary
-            #sp = [Artist(self.element(bkey).line.midpoint).draw() for bkey in branch if bkey in support_keys]
             
             # The intersection of the supporting elements in the branch with foundation
             sp_line = [Artist(self.element(bkey).line).draw() for bkey in branch if bkey in support_keys]
             for line in sp_line:
-                int_pt = gh.BrepXLine(support_geo,line)[1]
+                int_pt = gh.BrepXCurve(support_geo,line)[1]
                 if int_pt != None:
-                    sp.append(int_pt[1])           
+                    sp.append(int_pt[1])
+                else:
+                    # take end point with the min Z coordinate
+                    pts = gh.EndPoints(line)
+                    if pts[0][2] < pts[1][2]:
+                        sp.append(pts[0])
+                    else:
+                        sp.append(pts[1])
+
 
             # The mid points of the elements in one branch
             cp = [Artist(self.element(bkey).line.midpoint).draw() for bkey in branch]

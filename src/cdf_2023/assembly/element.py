@@ -646,7 +646,7 @@ class Element(object):
 
         radius = assembly.globals['rod_radius']
         length = assembly.globals['rod_length']
-        rf_unit_offset = assembly.globals['rf_unit_offset']
+        #rf_unit_offset = assembly.globals['rf_unit_offset']
         joint_dist = assembly.globals['joint_dist']
 
         option_elements = []
@@ -663,7 +663,8 @@ class Element(object):
             current_connector_frame = self.connector_frame_2
         
         # create a copy of connector frame depending on unit size
-        T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2*math.sqrt(3)-rf_unit_offset))
+        #T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2*math.sqrt(3)-rf_unit_offset))
+        T1 = Translation.from_vector(current_connector_frame.xaxis*(length/2-unit_size/2*math.sqrt(3)))
         T2 = Translation.from_vector(-current_connector_frame.yaxis*unit_size/2)
         current_connector_frame_copy = current_connector_frame.transformed(T1*T2)
 
