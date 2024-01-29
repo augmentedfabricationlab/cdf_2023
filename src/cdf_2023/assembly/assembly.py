@@ -250,12 +250,12 @@ class Assembly(FromToData, FromToJson):
 
         if placed_by == 'robot':
             R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(120), current_connector_frame.point)
-            #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-rf_unit_radius+rf_unit_offset)/2.))
+            T1 = Translation.from_vector(-new_elem.frame.xaxis*a*((length-rf_unit_radius+rf_unit_offset)/2.))
         else:
             R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(240), current_connector_frame.point)
-            #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-rf_unit_radius+rf_unit_offset)/2.))
+            T1 = Translation.from_vector(-new_elem.frame.xaxis*b*((length-rf_unit_radius+rf_unit_offset)/2.))
 
-        new_elem.transform(R1)
+        new_elem.transform(R1*T1)
 
         # Define a desired rotation around the parent element
         T_point = Translation.from_vector(current_elem.frame.xaxis)
@@ -898,13 +898,12 @@ class Assembly(FromToData, FromToJson):
 
         if unit_index == 1:
             if current_elem.connector_2_state:
-                previous_elem.connector_2_state = False
-                my_new_elem.connector_2_state = False
-
-            if current_elem.connector_1_state:
-                previous_elem.connector_1_state = False
-                my_new_elem.connector_1_state = False
-        
+                if mirror_unit:
+                    previous_elem.connector_2_state = False
+                    my_new_elem.connector_2_state = False
+                else:
+                    previous_elem.connector_2_state = False
+                    my_new_elem.connector_1_state = False
 
 
     def keys_within_radius(self, current_key):
