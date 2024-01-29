@@ -211,13 +211,13 @@ class Assembly(FromToData, FromToJson):
     def add_rf_unit_element(
             self,
             current_key,
-            mirror_unit=False,
+            flip='AA',
             angle=0,
             shift_value=0,
             placed_by='human',
-            robot_name='AA',
-            robot_AA_base_frame=None,
-            robot_AB_base_frame=None,
+            robot_name = 'AA',
+            robot_AA_base_frame = None,
+            robot_AB_base_frame = None,
             on_ground=False,
             unit_index=0,
             frame_measured=None
@@ -241,10 +241,16 @@ class Assembly(FromToData, FromToJson):
             current_connector_frame = current_elem.connector_frame_2
             c = 1
 
-        if mirror_unit:
+        if flip == 'AA':
             a = b = 0
-        else:
-            a = b = 0
+        if flip == 'AB':
+            a = 0
+            b = 1*c
+        if flip == 'BA':
+            a = 1*c
+            b = 0
+        if flip == 'BB':
+            a = b = 1*c
 
         new_elem = current_elem.copy()
 
@@ -286,7 +292,7 @@ class Assembly(FromToData, FromToJson):
             self.network.add_edge(N-1, N, edge_to='parent')
             self.network.add_edge(current_key, N, edge_to='parent')
 
-        self.update_connectors_states(current_key, mirror_unit, new_elem, unit_index)
+        self.update_connectors_states(current_key, flip, new_elem, unit_index)
 
         if unit_index == 1:
             if current_elem.connector_1_state:
@@ -741,7 +747,7 @@ class Assembly(FromToData, FromToJson):
 
     def close_rf_unit(self,
                       current_key,
-                      mirror_unit,
+                      flip,
                       angle,
                       shift_value,
                       robot_name='AA',
@@ -759,7 +765,7 @@ class Assembly(FromToData, FromToJson):
                 placed_by = 'robot'
                 #frame_id = None
                 my_new_elem = self.add_rf_unit_element(current_key,
-                                                       mirror_unit=mirror_unit,
+                                                       flip=flip,
                                                        angle=angle,
                                                        shift_value=shift_value,
                                                        placed_by=placed_by,
@@ -774,7 +780,7 @@ class Assembly(FromToData, FromToJson):
                 placed_by = 'human'
                 #frame_id = added_frame_id
                 my_new_elem = self.add_rf_unit_element(current_key,
-                                                       mirror_unit=mirror_unit,
+                                                       flip=flip,
                                                        angle=angle,
                                                        shift_value=shift_value,
                                                        placed_by=placed_by,
@@ -792,7 +798,7 @@ class Assembly(FromToData, FromToJson):
 
     def join_branches(self,
                       keys_pair,
-                      mirror_unit,
+                      flip,
                       angle,
                       shift_value,
                       new_elem,
@@ -811,7 +817,7 @@ class Assembly(FromToData, FromToJson):
                 placed_by = 'robot'
                 #frame_id = None
                 my_new_elem = self.add_rf_unit_element(keys_pair[0],
-                                                       mirror_unit=mirror_unit,
+                                                       flip=flip,
                                                        angle=angle,
                                                        shift_value=shift_value,
                                                        placed_by=placed_by,
@@ -826,7 +832,7 @@ class Assembly(FromToData, FromToJson):
                 placed_by = 'human'
                 #frame_id = None
                 my_new_elem = self.add_rf_unit_element(keys_pair[0],
-                                                       mirror_unit=mirror_unit,
+                                                       flip=flip,
                                                        angle=angle,
                                                        shift_value=shift_value,
                                                        placed_by=placed_by,
@@ -888,7 +894,7 @@ class Assembly(FromToData, FromToJson):
         return parent_key
 
 
-    def update_connectors_states(self, current_key, mirror_unit, my_new_elem, unit_index):
+    def update_connectors_states(self, current_key, flip, my_new_elem, unit_index):
 
 
         key_index = self.network.key_index()
@@ -898,12 +904,31 @@ class Assembly(FromToData, FromToJson):
 
         if unit_index == 1:
             if current_elem.connector_2_state:
-                if mirror_unit:
+                if flip == 'AA':
                     previous_elem.connector_2_state = False
                     my_new_elem.connector_2_state = False
-                else:
+                if flip == 'AB':
                     previous_elem.connector_2_state = False
                     my_new_elem.connector_1_state = False
+                if flip == 'BA':
+                    previous_elem.connector_1_state = False
+                    my_new_elem.connector_2_state = False
+                if flip == 'BB':
+                    previous_elem.connector_1_state = False
+                    my_new_elem.connector_1_state = False
+            if current_elem.connector_1_state:
+                if flip == 'AA':
+                    previous_elem.connector_1_state = False
+                    my_new_elem.connector_1_state = False
+                if flip == 'AB':
+                    previous_elem.connector_1_state = False
+                    my_new_elem.connector_2_state = False
+                if flip == 'BA':
+                    previous_elem.connector_2_state = False
+                    my_new_elem.connector_1_state = False
+                if flip == 'BB':
+                    previous_elem.connector_2_state = False
+                    my_new_elem.connector_2_state = False
 
 
     def keys_within_radius(self, current_key):
@@ -974,11 +999,11 @@ class Assembly(FromToData, FromToJson):
 
         return abs(dot_product)*100, vector
 
-    def all_options_elements(self, mirror_unit, angle):
+    def all_options_elements(self, flip, angle):
         """Returns a list of elements.
         """
         keys = [key for key, element in self.elements()]
-        return [self.element(key).current_option_elements(self, mirror_unit, angle) for key in keys]
+        return [self.element(key).current_option_elements(self, flip, angle) for key in keys]
 
 
     def all_options_vectors(self, len):

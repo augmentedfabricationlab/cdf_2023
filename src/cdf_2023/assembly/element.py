@@ -642,7 +642,7 @@ class Element(object):
         else:
             return []
 
-    def current_option_elements(self, assembly, mirror_unit, angle, shift_value):
+    def current_option_elements(self, assembly, flip, angle, shift_value):
 
         radius = assembly.globals['rod_radius']
         length = assembly.globals['rod_length']
@@ -661,10 +661,16 @@ class Element(object):
             current_connector_frame = self.connector_frame_2
             c = 1
 
-        if mirror_unit:
+        if flip == 'AA':
             a = b = 0
-        else:
-            a = b = 0
+        if flip == 'AB':
+            a = 0
+            b = 1*c
+        if flip == 'BA':
+            a = 1*c
+            b = 0
+        if flip == 'BB':
+            a = b = 1*c
 
         if current_connector_frame != None:
             R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(120), current_connector_frame.point)
