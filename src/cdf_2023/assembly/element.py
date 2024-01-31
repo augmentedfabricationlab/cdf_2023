@@ -739,7 +739,7 @@ class Element(object):
         #         option_elements.append(e1)
         #         option_elements.append(e2)
 
-        return option_elements
+        return option_elements, mirrored_frame
 
     def current_option_vectors(self, len):
 

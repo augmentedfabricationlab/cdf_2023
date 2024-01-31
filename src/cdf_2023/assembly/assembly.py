@@ -11,13 +11,13 @@ import copy
 from copy import deepcopy
 from compas.geometry import Frame, Vector, Plane, Line
 from compas.geometry import Transformation, Translation, Rotation
-from compas.geometry import intersection_line_plane
+from compas.geometry import intersection_line_plane, centroid_points
 from compas.geometry import distance_point_point, distance_line_line, distance_point_line
 from compas.datastructures import Network, mesh_offset
 from compas.artists import Artist
 from compas.colors import Color
 from compas.topology import connected_components
-from compas_rhino.conversions import line_to_rhino_curve, point_to_compas, point_to_rhino, line_to_compas
+from compas_rhino.conversions import line_to_rhino_curve, point_to_compas, point_to_rhino, line_to_compas, plane_to_rhino
 
 import rhinoscriptsyntax as rs
 import Rhino.Geometry as rg
@@ -889,7 +889,7 @@ class Assembly(FromToData, FromToJson):
             # The intersection of the supporting elements in the branch with foundation
             sp_line = [Artist(self.element(bkey).line).draw() for bkey in branch if bkey in support_keys]
             for line in sp_line:
-                int_pt = gh.BrepXCurve(support_geo,line)[1]
+                int_pt = gh.MeshXCurve(support_geo,line)[0] # get intersection points (0 - points, 1 - faces)
                 if int_pt != None:
                     if type(int_pt) == type([]): # check if more than one intersection point take
                         # take point with bigger Z coordinate
@@ -1223,47 +1223,48 @@ class Assembly(FromToData, FromToJson):
                     element.connector_2_state = False
             else:
                 pass
+    
 
-    def distance_to_target_geo(self, key, angle, input_geo):
+    def distance_to_target_geo(self, key, elem_option, input_geo):
 
-        open_connector_frame = self.element(key).connectors(state='open')[0]
-        elem_frame = self.element(key).frame
+        # three point - middle of elements
+        p_A = self.element(key).frame.point
+        p_B = elem_option[0].frame.point
+        p_C = elem_option[1].frame.point
+        centroid = centroid_points([p_A,p_B,p_C])
+        
+        # create a plane with the origin in the centroid of the three points
+        centroid = centroid_points([p_A,p_B,p_C])
+        centr_plane = Plane.from_three_points(centroid, p_B, p_C)
+        plane = plane_to_rhino(centr_plane)
 
-        #open_connector_frame = elem.connectors(state='open')[0]
+        # find vector between sohrtest_line and normal
+        closest_point = input_geo.ClosestPoint(plane.Origin)
+        distance = closest_point.DistanceTo(plane.Origin)
 
-        R = Rotation.from_axis_and_angle(elem_frame.xaxis, math.radians(angle), elem_frame.point)
-
-        open_connector_frame_copy = open_connector_frame.transformed(R)
-
-        open_connector_plane = Artist(open_connector_frame_copy).draw()
-        #open_connector_plane = Artist(open_connector_frame).draw()
-
-        closest_point = input_geo.ClosestPoint(open_connector_plane.Origin)
-        distance = closest_point.DistanceTo(open_connector_plane.Origin)
-
-        vector = rg.Vector3d(closest_point) - rg.Vector3d(open_connector_plane.Origin)
+        vector = rg.Vector3d(closest_point) - rg.Vector3d(plane.Origin)
 
         return distance, vector
 
-    def orientation_to_target_geo(self, key, angle, input_geo):
+    def orientation_to_target_geo(self, key, elem_option, input_geo):
 
-        open_connector_frame = self.element(key).connectors(state='open')[0]
-        elem_frame = self.element(key).frame
-        #open_connector_frame = elem.connectors(state='open')[0]
+        # three point - middle of elements
+        p_A = self.element(key).frame.point
+        p_B = elem_option[0].frame.point
+        p_C = elem_option[1].frame.point
+        centroid = centroid_points([p_A,p_B,p_C])
+        
+        # create a plane with the origin in the centroid of the three points
+        centroid = centroid_points([p_A,p_B,p_C])
+        centr_plane = Plane.from_three_points(centroid, p_B, p_C)
+        m_plane = plane_to_rhino(centr_plane)
 
-        R = Rotation.from_axis_and_angle(elem_frame.xaxis, math.radians(angle), elem_frame.point)
+        closest_point = input_geo.ClosestPoint(m_plane.Origin)
 
-        open_connector_frame_copy = open_connector_frame.transformed(R)
-        #open_connector_frame_copy = open_connector_frame.transformed()
-        open_connector_plane = Artist(open_connector_frame_copy).draw()
-        #open_connector_plane = Artist(open_connector_frame).draw()
-
-        closest_point = input_geo.ClosestPoint(open_connector_plane.Origin)
-
-        vector = Vector(closest_point.X, closest_point.Y, closest_point.Z) - open_connector_frame_copy.point
+        vector = Vector(closest_point.X, closest_point.Y, closest_point.Z) - centr_plane.point
 
         #angle = 180 - math.degrees(conn_frame_copy.zaxis.angle(vector))
-        v1 = open_connector_frame_copy.zaxis
+        v1 = centr_plane.normal 
         v1.unitize()
         vector.unitize()
         dot_product = v1.dot(vector)
