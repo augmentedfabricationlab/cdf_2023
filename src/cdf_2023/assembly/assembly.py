@@ -704,7 +704,7 @@ class Assembly(FromToData, FromToJson):
         new_elem.transform(R1)
         new_elem.transform(R2)
 
-        return new_elem
+        return new_elem, start_point, end_point
 
     def calculate_global_equilibrium(self, support, option_elems, radius, allow_temp_support=True):
         """Check if the structure is in equilibrium.
@@ -812,7 +812,7 @@ class Assembly(FromToData, FromToJson):
 
             # define the zero plane for displaying
             z_0 = min([p[2] for p in sp])
-
+            z_0 += 0.001 # to avoid overlapping with support geometry
 
             # Step 1: Calculate single Resultants
             vol = l * math.pi * r**2 #Volume Vector for Rods; Material weight is considered as constant
@@ -891,7 +891,15 @@ class Assembly(FromToData, FromToJson):
             for line in sp_line:
                 int_pt = gh.BrepXCurve(support_geo,line)[1]
                 if int_pt != None:
-                    sp.append(int_pt[1])
+                    if type(int_pt) == type([]): # check if more than one intersection point take
+                        # take point with bigger Z coordinate
+                        if int_pt[0][2] < int_pt[1][2]:
+                            sp.append(int_pt[1])
+                        else:
+                            sp.append(int_pt[0])
+                    else:
+                        sp.append(int_pt)
+
                 else:
                     # take end point with the min Z coordinate
                     pts = gh.EndPoints(line)
