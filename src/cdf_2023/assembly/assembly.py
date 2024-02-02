@@ -75,7 +75,8 @@ class Assembly(FromToData, FromToJson):
         self.network = Network()
         self.network.attributes.update({
             'name' : 'Assembly',
-            'globals' : {}})
+            'globals' : {}
+            })
     
 
         if attributes is not None:
@@ -88,7 +89,6 @@ class Assembly(FromToData, FromToJson):
             'placed_by' : 'human',
             'is_support' : False,
             'robot_name' : 'AA',
-            #'is_held_by_robot' : False,
             'key_held_by_robot': None,
             'stabilizing_robot' : None,
             'robot_AA_base_frame' : False,
@@ -124,6 +124,15 @@ class Assembly(FromToData, FromToJson):
     @globals.setter
     def globals(self, dict):
         self.network.attributes['globals'] = dict    
+
+    # @property
+    # def target_geo(self):
+    #     """mesh: The target geometry of assembly."""
+    #     return self.network.attributes.get('target_geo', None)
+
+    # @target_geo.setter
+    # def target_geo(self, mesh):
+    #     self.network.attributes['target_geo'] = mesh 
 
     def number_of_elements(self):
         """Compute the number of elements of the assembly.
@@ -362,6 +371,7 @@ class Assembly(FromToData, FromToJson):
 
 
         self.add_element(new_elem,
+                         key = N,
                          placed_by=placed_by,
                          robot_name=robot_name,
                          key_held_by_robot=key_held_by_robot,
@@ -454,9 +464,11 @@ class Assembly(FromToData, FromToJson):
         """
         cls = type(self)
         return cls.from_data(deepcopy(self.data))
+    
 
     def element(self, key, data=False):
         """Get an element by its key."""
+
         if data:
             return self.network.node[key]['element'], self.network.node[key]
         else:
@@ -997,7 +1009,7 @@ class Assembly(FromToData, FromToJson):
                       frame_measured=None):
         """Add a module to the assembly.
         """
-
+        keys_human = []
         keys_robot = []
 
         for i in range(2):
@@ -1036,7 +1048,7 @@ class Assembly(FromToData, FromToJson):
                                                        on_ground=False,
                                                        unit_index=i,
                                                        frame_measured=None)
-                keys_human = list((self.network.nodes_where({'element': my_new_elem})))
+                keys_human += list((self.network.nodes_where({'element': my_new_elem})))
 
         keys_dict = {'keys_human': keys_human, 'keys_robot':keys_robot}
 
@@ -1061,8 +1073,10 @@ class Assembly(FromToData, FromToJson):
         """
         #option_elem_num = 0  # number of the element in the generated option which is touching other element
         keys_robot = []
+        keys_human = []
 
         for i in range(3):
+            N = self.network.number_of_nodes()
             if i == 0:
                 placed_by = 'robot'
                 #frame_id = None
@@ -1098,12 +1112,13 @@ class Assembly(FromToData, FromToJson):
                                                        on_ground=False,
                                                        unit_index=i,
                                                        frame_measured=None)
-                keys_human = list((self.network.nodes_where({'element': my_new_elem})))
+                keys_human += list((self.network.nodes_where({'element': my_new_elem})))
             if i == 2:
                 if new_elem != None:
                     placed_by = 'human'
                     #frame_id = None
                     my_new_elem = self.add_element(new_elem,
+                                                   key = N,
                                                 placed_by=placed_by,
                                                 robot_name=robot_name,
                                                 robot_AA_base_frame=robot_AA_base_frame,
@@ -1113,7 +1128,7 @@ class Assembly(FromToData, FromToJson):
                                                 frame_measured=None,
                                                 is_mirrored=mirror_unit
                                                 )
-                    keys_human = list((self.network.nodes_where({'element': my_new_elem})))
+                    keys_human += list((self.network.nodes_where({'element': my_new_elem})))
 
         N = self.network.number_of_nodes()
 
