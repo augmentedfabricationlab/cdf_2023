@@ -183,6 +183,27 @@ def element_to_INCON(id_name, key, element, building_steps, is_built,name):
             }
         building_steps.append(line)
 
+def element_to_json(assembly):
+    building_steps = {}
+    for key, element in assembly.elements():
+
+        line = {"node": {
+            str(key): {
+            "element": {
+            "frame": {"point":[], "xaxis":[], "yaxis":[]}
+            },
+            "is_planned": element.is_planned,
+            "is_built": element.is_built,
+            "placed_by": element.placed_by,
+            "is_support": element.is_support,
+            "is_held_by_robot": element.is_held_by_robot,
+            "robot_frame": element.robot_frame,
+            "frame_measured": element.frame_measured
+            }
+        }
+        }
+        building_steps.append(line)
+
 def tag_to_INCON(key, tag, building_steps):
         w,qx,qy,qz = tag.quaternion
         line = {
@@ -201,7 +222,7 @@ def tag_to_INCON(key, tag, building_steps):
                 "build_instructions" : []
             }
         building_steps.append(line)
-        
+
 def _deserialize_from_data(data):
     module, attr = data['dtype'].split('/')
     cls = globals().get(attr)
