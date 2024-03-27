@@ -13,11 +13,13 @@ from compas.geometry import Frame, Vector, Plane, Line
 from compas.geometry import Transformation, Translation, Rotation
 from compas.geometry import intersection_line_plane, centroid_points
 from compas.geometry import distance_point_point, distance_line_line, distance_point_line
-from compas.datastructures import Network, mesh_offset
+from compas.datastructures import Network, Mesh, mesh_offset
 from compas.artists import Artist
 from compas.colors import Color
 from compas.topology import connected_components
-from compas_rhino.conversions import line_to_rhino_curve, point_to_compas, point_to_rhino, line_to_compas, plane_to_rhino
+from compas_rhino.conversions import line_to_rhino_curve, point_to_compas, point_to_rhino, line_to_compas, plane_to_rhino, RhinoMesh
+
+from compas_fab.robots import Configuration
 
 import rhinoscriptsyntax as rs
 import Rhino.Geometry as rg
@@ -88,12 +90,15 @@ class Assembly(FromToData, FromToJson):
             'is_built' : False,
             'placed_by' : 'human',
             'is_support' : False,
+            'is_mirrored' : False,
             'robot_name' : 'AA',
             'key_held_by_robot': None,
             'stabilizing_robot' : None,
-            'robot_AA_base_frame' : False,
-            'robot_AB_base_frame' : False,
-            'frame_measured':False
+            'robot_AA_base_frame' : None,
+            'robot_AB_base_frame' : None,
+            'robot_AA_config' : None,
+            'robot_AB_config' : None,
+            'frame_measured':None
 
         })
 
@@ -125,14 +130,25 @@ class Assembly(FromToData, FromToJson):
     def globals(self, dict):
         self.network.attributes['globals'] = dict    
 
-    # @property
-    # def target_geo(self):
-    #     """mesh: The target geometry of assembly."""
-    #     return self.network.attributes.get('target_geo', None)
+    @property
+    def target_geo(self):
+        """mesh: The target geometry of assembly."""
+        return self.network.attributes.get('target_geo', None)
 
-    # @target_geo.setter
-    # def target_geo(self, mesh):
-    #     self.network.attributes['target_geo'] = mesh 
+    @target_geo.setter
+    def target_geo(self, mesh):
+        self.network.attributes['target_geo'] = mesh 
+
+    @property
+    def support(self):
+        """mesh: The target geometry of assembly."""
+        return self.network.attributes.get('support', None)
+
+    @support.setter
+    def support(self, mesh):
+        self.network.attributes['support'] = mesh
+        #Mesh.from_data(self.target_geo)
+
 
     def number_of_elements(self):
         """Compute the number of elements of the assembly.
@@ -162,6 +178,15 @@ class Assembly(FromToData, FromToJson):
         """
         # Network data does not recursively serialize to data...
         d = self.network.data
+        
+        # convers to compas.mesh to save data
+        support_geo_rhino_mesh = RhinoMesh.from_geometry(self.support)
+        support_geo_compas_mesh = support_geo_rhino_mesh.to_compas()
+        d['attributes']['support'] = support_geo_compas_mesh.to_data()
+
+        target_geo_rhino_mesh = RhinoMesh.from_geometry(self.target_geo)
+        target_geo_compas_mesh = target_geo_rhino_mesh.to_compas()
+        d['attributes']['target_geo'] = target_geo_compas_mesh.to_data()
 
         # so we need to trigger that for elements stored in nodes
         node = {}
@@ -181,12 +206,43 @@ class Assembly(FromToData, FromToJson):
                 if node[vkey]['robot_AB_base_frame']:
                     node[vkey]['robot_AB_base_frame'] = node[vkey]['robot_AB_base_frame'].to_data()
 
+            if 'robot_AA_config' in vdata:
+                if node[vkey]['robot_AA_config']:
+                    node[vkey]['robot_AA_config'] = node[vkey]['robot_AA_config'].to_data()
+
+            if 'robot_AB_config' in vdata:
+                if node[vkey]['robot_AB_config']:
+                    node[vkey]['robot_AB_config'] = node[vkey]['robot_AB_config'].to_data()
+
         d['node'] = node
 
         return d
 
     @data.setter
     def data(self, data):
+        
+        # try/except for old files, where support is not saved yet
+        try:
+            mesh_data = data['attributes']['support']
+            compas_mesh= Mesh.from_data(mesh_data)
+            rhino_mesh = Artist(compas_mesh).draw()
+            rhino_mesh.VertexColors.Clear()
+
+            data['attributes']['support'] = rhino_mesh
+        except:
+            pass
+
+        # try/except for old files, where target is not saved yet
+        try:
+            mesh_data = data['attributes']['target_geo']
+            compas_mesh= Mesh.from_data(mesh_data)
+            rhino_mesh = Artist(compas_mesh).draw()
+            rhino_mesh.VertexColors.Clear()
+
+            data['attributes']['target_geo'] = rhino_mesh
+        except:
+            pass
+        
         # Deserialize elements from node dictionary
         for _vkey, vdata in data['node'].items():
             vdata['element'] = Element.from_data(vdata['element'])
@@ -203,21 +259,32 @@ class Assembly(FromToData, FromToJson):
                 if vdata['robot_AB_base_frame']:
                     vdata['robot_AB_base_frame'] = Frame.from_data(vdata['robot_AB_base_frame']) #node[vkey]['frame_measured'].to_data()
 
+            if 'robot_AA_config' in vdata:
+                if vdata['robot_AA_config']:
+                    vdata['robot_AA_config'] = Configuration.from_data(vdata['robot_AA_config']) #node[vkey]['frame_measured'].to_data()
+
+            if 'robot_AB_config' in vdata:
+                if vdata['robot_AB_config']:
+                    vdata['robot_AB_config'] = Configuration.from_data(vdata['robot_AB_config']) #node[vkey]['frame_measured'].to_data()
+
         self.network = Network.from_data(data)
 
     def clear(self):
         """Clear all the assembly data."""
         self.network.clear()
 
-    def robot_status(self):
-        """Get robots' status"""
+    def robot_status(self, key=None):
+        """Get robots' status
+        Define key to check robot status at specific assembly step
+        """
 
         status_robot_AA = 'FREE'
         status_robot_AB = 'FREE'
-
-        N = self.network.number_of_nodes()
-        r_stabilizing = self.network.node_attribute(N-1, 'stabilizing_robot')
-
+        if key == None:
+            N = self.network.number_of_nodes()
+            r_stabilizing = self.network.node_attribute(N-1, 'stabilizing_robot')
+        else:
+            r_stabilizing = self.network.node_attribute(key-1, 'stabilizing_robot')
 
         if r_stabilizing == 'AA':
             status_robot_AA = 'Stabilizing'
@@ -274,6 +341,8 @@ class Assembly(FromToData, FromToJson):
             stabilizing_robot=None,
             robot_AA_base_frame=None,
             robot_AB_base_frame=None,
+            robot_AA_config=None,
+            robot_AB_config=None,
             on_ground=False,
             unit_index=0,
             frame_measured=None
@@ -361,9 +430,11 @@ class Assembly(FromToData, FromToJson):
 
 
         if placed_by == 'robot':
+            frame_measured = frame_measured
             R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(120), current_connector_frame.point)
             #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-unit_size+rf_unit_offset)/2.))
         else:
+            frame_measured = None
             R1 = Rotation.from_axis_and_angle(current_connector_frame.zaxis, math.radians(240), current_connector_frame.point)
             #T1 = Translation.from_vector(-new_elem.frame.xaxis*((length-unit_size+rf_unit_offset)/2.))
 
@@ -378,6 +449,8 @@ class Assembly(FromToData, FromToJson):
                          stabilizing_robot=stabilizing_robot,
                          robot_AA_base_frame=robot_AA_base_frame,
                          robot_AB_base_frame=robot_AB_base_frame,
+                         robot_AA_config=robot_AA_config,
+                         robot_AB_config=robot_AB_config,
                          on_ground=on_ground,
                          frame_measured=frame_measured,
                          is_planned=True,
@@ -588,11 +661,13 @@ class Assembly(FromToData, FromToJson):
             if intersection != None:
                 return intersection
 
-    def get_rot_angle(self, step, rot_axis, rot_point, elem_line1, elem_line2, rot_dir, epsilon):
+    def get_rot_angle(self, step, rot_axis, rot_point, elem_line_1, elem_line_2, rot_dir, epsilon):
         """
-        elem_line1: element to rotate
-        elem_line2: element to attach to
+        elem_line_1: element to rotate
+        elem_line_2: element to attach to
         """
+        elem_line1 = copy.copy(elem_line_1)
+        elem_line2 = copy.copy(elem_line_2)
 
         rot_angle = 0
         init_step = math.radians(step)
@@ -606,17 +681,17 @@ class Assembly(FromToData, FromToJson):
 
         d, line = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
 
+        # do till distance is more than needed
         while d < self.globals['rod_radius'] * 2.0 + self.globals['joint_dist']:
             i += 1
 
             if i >= max_i:
                 break
 
-            rot_angle += alpha
-
             # rotate the cylinder axis by alpha
             R = rg.Transform.Rotation(alpha, rot_axis, rot_point)
             elem_line1.Transform(R)
+            rot_angle += alpha
 
             d, line = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
 
@@ -624,20 +699,17 @@ class Assembly(FromToData, FromToJson):
         max_i= 50
         d, line = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
 
+        # half the rotation step and save the same direction as defined in the beginning (0 or 1)
+        alpha = 0.5 * alpha
+
+        # find precision
         while abs(d - (self.globals['rod_radius'] * 2.0 + self.globals['joint_dist'])) > epsilon:
             i += 1
 
             if i >= max_i:
                 break
 
-            # half the rotation step and ensure it is > 0
-            alpha = abs(0.5 * alpha)
-
-            if rot_dir == 0:
-                alpha = -alpha   # invert direction for counter clockwise rotation
-
             # test distance
-            d, line = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
             if d > self.globals['rod_radius'] * 2.0 + self.globals['joint_dist']:
                 alpha = -alpha   # distance too large --> rotate back
             else:
@@ -646,10 +718,13 @@ class Assembly(FromToData, FromToJson):
             # rotate axis
             R = rg.Transform.Rotation(alpha, rot_axis, rot_point)
             elem_line1.Transform(R)
-
             rot_angle += alpha
 
-        return math.degrees(rot_angle)
+            d, line = self.shortest_distance_between_two_lines(elem_line1, elem_line2)
+
+
+        return math.degrees(rot_angle), d
+
 
     def delete_element(self, key):
         """Delete an element from the assembly.
@@ -671,7 +746,7 @@ class Assembly(FromToData, FromToJson):
         self.network.delete_node(key)
 
 
-    def add_third_element(self, elem, elem1, elem2, point1, point2, shift_value, epsilon):
+    def add_third_element(self, elem, elem1, elem2, point1, point2, shift_value, rot_dir, epsilon):
         """
         elem1: open connector
         elem2: option elem
@@ -697,23 +772,27 @@ class Assembly(FromToData, FromToJson):
         T2 = Translation.from_vector(elem_frame.xaxis * shift_value)
         new_elem.transform(T2)
 
-        rot_dir1 = 0
-        rot_dir2 = 1
+        rot_dir1 = int(rot_dir[0])
+        rot_dir2 = int(rot_dir[1])
+
         step1 = 0.3
         step2 = 0.3
 
-        rot_axis1 = rg.Vector3d(elem2_line_rg.PointAtStart- elem2_line_rg.PointAtEnd)
+        rot_axis1 = rg.Vector3d(elem2_line_rg.PointAtStart - elem2_line_rg.PointAtEnd)
         rot_axis2 = rg.Vector3d(elem1_line_rg.PointAtStart - elem1_line_rg.PointAtEnd)
         rot_point1 = point_to_rhino(elem2.frame.point)
         rot_point2 = point_to_rhino(elem1.frame.point)
         new_elem_line = line_to_rhino_curve(new_elem.line)
 
-        tol_angle1 = self.get_rot_angle(step1, rot_axis1, rot_point1, new_elem_line, elem1_line_rg, rot_dir1, epsilon)
-        tol_angle2 = self.get_rot_angle(step2, rot_axis2, rot_point2, new_elem_line, elem2_line_rg, rot_dir2, epsilon)
+        tol_angle1, d1 = self.get_rot_angle(step1, rot_axis1, rot_point1, new_elem_line, elem1_line_rg, rot_dir1, epsilon)
 
-        R1 = Rotation.from_axis_and_angle(elem2.frame.xaxis, math.radians(tol_angle1), elem2.frame.point)
-        R2 = Rotation.from_axis_and_angle(elem1.frame.xaxis, math.radians(tol_angle2), elem1.frame.point)
+        R1 = Rotation.from_axis_and_angle(elem2.frame.xaxis, math.radians(-tol_angle1), elem2.frame.point)
         new_elem.transform(R1)
+        new_elem_line = line_to_rhino_curve(new_elem.line)
+
+
+        tol_angle2, d2 = self.get_rot_angle(step2, rot_axis2, rot_point2, new_elem_line, elem2_line_rg, rot_dir2, epsilon)
+        R2 = Rotation.from_axis_and_angle(elem1.frame.xaxis, math.radians(-tol_angle2), elem1.frame.point)
         new_elem.transform(R2)
 
         return new_elem, start_point, end_point
@@ -873,7 +952,7 @@ class Assembly(FromToData, FromToJson):
 
         return([la, rp, l])
 
-    def calculate_local_equilibrium_in_all_branches(self, current_key, elem_options, la_limit, branches = None):
+    def calculate_local_equilibrium_in_all_branches(self, current_key, elem_options, la_limit, branches = None, force_stabilize=False):
         
         robot_holding = False
         support_geo = self.support
@@ -925,13 +1004,14 @@ class Assembly(FromToData, FromToJson):
             cp = [Artist(self.element(bkey).line.midpoint).draw() for bkey in branch]
 
             # Add option to branch
-            if current_key in branch:
+            if current_key in branch and elem_options != []:
                 cp += [Artist(elem_option.line.midpoint).draw() for elem_option in elem_options]          
 
             # calculate local equilibrium (level arm) and the resultant point of the selected option elements
             lever_arm, resultant_point, sp_position_planar = self.calculate_local_equilibrium_in_a_branch(cp, sp, self.globals['rod_length'], self.globals['rod_radius'])
 
-            if lever_arm > la_limit:
+
+            if lever_arm > la_limit or force_stabilize:
                 if current_key in branch:
                     # calculate stability for the case, when robot is holding
 
@@ -941,36 +1021,39 @@ class Assembly(FromToData, FromToJson):
                     stabilizing_robot = self.network.node_attribute(N-1, 'stabilizing_robot')
 
                     if hold_elem != None and hold_elem in branch:  
-
-                        ## CASE 1 - current
-                        sp_1 = sp[:]
-                        sp_1.append(Artist(elem_options[0].line.midpoint).draw())
-                        lever_arm_1, resultant_point_1, sp_position_planar_1 = self.calculate_local_equilibrium_in_a_branch(cp, sp_1, self.globals['rod_length'], self.globals['rod_radius'])
-
-                        
+                      
                         ## CASE 2 - last placed
                         sp_2 = sp[:]
                         sp_2.append(Artist(self.element(hold_elem).line.midpoint).draw())
-                        lever_arm_2, resultant_point_2, sp_position_planar_2 = self.calculate_local_equilibrium_in_a_branch(cp, sp_2, self.globals['rod_length'], self.globals['rod_radius'])                    
+                        lever_arm, resultant_point, sp_position_planar = self.calculate_local_equilibrium_in_a_branch(cp, sp_2, self.globals['rod_length'], self.globals['rod_radius'])                    
+                        sp = sp_2
 
-                        # select smaller la
-                        if lever_arm_1 <= lever_arm_2:
-                            lever_arm, resultant_point, sp, sp_position_planar = lever_arm_1, resultant_point_1, sp_1, sp_position_planar_1
-                            key_hold = "current"
-                            key_held_by_robot = N # when first element is placed by robot
-                            stabilizing_robot = self.get_free_robot_name()
-                        else:
-                            lever_arm, resultant_point, sp, sp_position_planar = lever_arm_2, resultant_point_2, sp_2, sp_position_planar_2
-                            key_hold = "last placed (key {})".format(hold_elem)
-                            key_held_by_robot = hold_elem
-                    
+                        key_hold = "last placed (key {})".format(hold_elem)
+                        key_held_by_robot = hold_elem
+
+
+                        ## CASE 1 - current
+                        if elem_options != []: # check if elem_options is exising!!!!!!!!!!!!!!!!!!!!
+                            sp_1 = sp[:]
+                            sp_1.append(Artist(elem_options[0].line.midpoint).draw()) 
+                            lever_arm_1, resultant_point_1, sp_position_planar_1 = self.calculate_local_equilibrium_in_a_branch(cp, sp_1, self.globals['rod_length'], self.globals['rod_radius'])
+
+                            # select smaller la
+                            if lever_arm_1 <= lever_arm:
+                                lever_arm, resultant_point, sp, sp_position_planar = lever_arm_1, resultant_point_1, sp_1, sp_position_planar_1
+                                key_hold = "current"
+                                key_held_by_robot = N # when first element is placed by robot
+                                stabilizing_robot = self.get_free_robot_name()
+
+
                     else:
                         ## CASE 1 - current
-                        sp.append(Artist(elem_options[0].line.midpoint).draw())
-                        lever_arm, resultant_point, sp_position_planar = self.calculate_local_equilibrium_in_a_branch(cp, sp, self.globals['rod_length'], self.globals['rod_radius'])
-                        key_hold = "current" 
-                        key_held_by_robot = N # when first element is placed by robot
-                        stabilizing_robot = self.get_free_robot_name()
+                        if elem_options != []: # check if elem_options is exising!!!!!!!!!!!!!!!!!!!!
+                            sp.append(Artist(elem_options[0].line.midpoint).draw())
+                            lever_arm, resultant_point, sp_position_planar = self.calculate_local_equilibrium_in_a_branch(cp, sp, self.globals['rod_length'], self.globals['rod_radius'])
+                            key_hold = "current" 
+                            key_held_by_robot = N # when first element is placed by robot
+                            stabilizing_robot = self.get_free_robot_name()
 
                     if lever_arm > la_limit:
                         feedback = 'Branch {}: unstable'.format(i)
@@ -1005,6 +1088,8 @@ class Assembly(FromToData, FromToJson):
                       stabilizing_robot=None,
                       robot_AA_base_frame=None,
                       robot_AB_base_frame=None,
+                      robot_AA_config=None,
+                      robot_AB_config=None,
                       on_ground=False,
                       frame_measured=None):
         """Add a module to the assembly.
@@ -1027,6 +1112,8 @@ class Assembly(FromToData, FromToJson):
                                                        stabilizing_robot=stabilizing_robot,
                                                        robot_AA_base_frame=robot_AA_base_frame,
                                                        robot_AB_base_frame=robot_AB_base_frame,
+                                                       robot_AA_config=robot_AA_config,
+                                                       robot_AB_config=robot_AB_config,
                                                        on_ground=False,
                                                        unit_index=i,
                                                        frame_measured=None)
@@ -1045,6 +1132,8 @@ class Assembly(FromToData, FromToJson):
                                                        stabilizing_robot=stabilizing_robot,
                                                        robot_AA_base_frame=robot_AA_base_frame,
                                                        robot_AB_base_frame=robot_AB_base_frame,
+                                                       robot_AA_config=robot_AA_config,
+                                                       robot_AB_config=robot_AB_config,
                                                        on_ground=False,
                                                        unit_index=i,
                                                        frame_measured=None)
@@ -1065,8 +1154,10 @@ class Assembly(FromToData, FromToJson):
                       robot_name,
                       key_held_by_robot,
                       stabilizing_robot,
-                      robot_AA_base_frame = None,
-                      robot_AB_base_frame = None,
+                      robot_AA_base_frame,
+                      robot_AB_base_frame,
+                      robot_AA_config,
+                      robot_AB_config,
                       on_ground=False,
                       frame_measured=None):
         """Join to branches by adding three elements.
@@ -1091,6 +1182,8 @@ class Assembly(FromToData, FromToJson):
                                                        stabilizing_robot=stabilizing_robot,
                                                        robot_AA_base_frame=robot_AA_base_frame,
                                                        robot_AB_base_frame=robot_AB_base_frame,
+                                                       robot_AA_config=robot_AA_config,
+                                                       robot_AB_config=robot_AB_config,
                                                        on_ground=False,
                                                        unit_index=i,
                                                        frame_measured=None)
@@ -1109,6 +1202,8 @@ class Assembly(FromToData, FromToJson):
                                                        stabilizing_robot=stabilizing_robot,
                                                        robot_AA_base_frame=robot_AA_base_frame,
                                                        robot_AB_base_frame=robot_AB_base_frame,
+                                                       robot_AA_config=robot_AA_config,
+                                                       robot_AB_config=robot_AB_config,
                                                        on_ground=False,
                                                        unit_index=i,
                                                        frame_measured=None)
@@ -1123,6 +1218,8 @@ class Assembly(FromToData, FromToJson):
                                                 robot_name=robot_name,
                                                 robot_AA_base_frame=robot_AA_base_frame,
                                                 robot_AB_base_frame=robot_AB_base_frame,
+                                                robot_AA_config=robot_AA_config,
+                                                robot_AB_config=robot_AB_config,
                                                 on_ground=False,
                                                 unit_index=2,
                                                 frame_measured=None,
@@ -1240,12 +1337,12 @@ class Assembly(FromToData, FromToJson):
                 pass
     
 
-    def distance_to_target_geo(self, key, elem_option, input_geo):
+    def distance_to_target_geo(self, elem_1, elem_2, elem_3, input_geo):
 
         # three point - middle of elements
-        p_A = self.element(key).frame.point
-        p_B = elem_option[0].frame.point
-        p_C = elem_option[1].frame.point
+        p_A = elem_1.frame.point
+        p_B = elem_2.frame.point
+        p_C = elem_3.frame.point
         centroid = centroid_points([p_A,p_B,p_C])
         
         # create a plane with the origin in the centroid of the three points
@@ -1261,12 +1358,12 @@ class Assembly(FromToData, FromToJson):
 
         return distance, vector
 
-    def orientation_to_target_geo(self, key, elem_option, input_geo):
+    def orientation_to_target_geo(self, elem_1, elem_2, elem_3, input_geo):
 
         # three point - middle of elements
-        p_A = self.element(key).frame.point
-        p_B = elem_option[0].frame.point
-        p_C = elem_option[1].frame.point
+        p_A = elem_1.frame.point
+        p_B = elem_2.frame.point
+        p_C = elem_3.frame.point
         centroid = centroid_points([p_A,p_B,p_C])
         
         # create a plane with the origin in the centroid of the three points
@@ -1285,6 +1382,24 @@ class Assembly(FromToData, FromToJson):
         dot_product = v1.dot(vector)
 
         return abs(dot_product)*100, vector
+
+    def feedback_target_geometry(self, elem_1, elem_2, elem_3, input_geo, distance_weight=0, max_distance=1):
+        feedback = []
+
+        orient_value, vec1 = self.orientation_to_target_geo(elem_1, elem_2, elem_3, input_geo)
+        dist_value, vec2 = self.distance_to_target_geo(elem_1, elem_2, elem_3, input_geo)
+        #score = output_value * (1-distance_weight) + (1-distance / max_distance) * distance_weight
+        if dist_value < max_distance:
+            out_score = orient_value * (1-distance_weight) + (1- dist_value/ max_distance) *100* distance_weight
+        else:
+            out_score = orient_value * (1-distance_weight)
+            
+        feedback.append("Distance to target geometry: {dist:.2f}m".format(dist=dist_value))
+        feedback.append('Orientation to target geometry: {len:.0f}%'. format(len=orient_value))
+        feedback.append('Overall score: {sco:.2f}%'. format(sco=out_score))
+
+        return out_score, feedback
+
 
     def all_options_elements(self, mirror_unit, angle):
         """Returns a list of elements.
@@ -1432,8 +1547,13 @@ class Assembly(FromToData, FromToJson):
             elem_dict["is_built"] = data['is_built'],
             elem_dict["placed_by"] = data["placed_by"],
             elem_dict["is_support"] = data["is_support"],
-            elem_dict["is_held_by_robot"] = data["is_held_by_robot"],
-            elem_dict["robot_frame"] = data["robot_frame"],
+            elem_dict["robot_name"] = data["robot_name"],
+            elem_dict["key_held_by_robot"] = data["key_held_by_robot"],
+            elem_dict["stabilizing_robot"] = data["stabilizing_robot"],
+            elem_dict["robot_AA_base_frame"] = data["robot_AA_base_frame"],
+            elem_dict["robot_AB_base_frame"] = data["robot_AB_base_frame"],
+            elem_dict["robot_AA_config"] = data["robot_AA_config"],
+            elem_dict["robot_AB_config"] = data["robot_AB_config"],
             elem_dict["frame_measured"] = data["frame_measured"]
 
             building_plan["node"][str(key)] = elem_dict
