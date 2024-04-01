@@ -180,13 +180,15 @@ class Assembly(FromToData, FromToJson):
         d = self.network.data
         
         # convers to compas.mesh to save data
-        support_geo_rhino_mesh = RhinoMesh.from_geometry(self.support)
-        support_geo_compas_mesh = support_geo_rhino_mesh.to_compas()
-        d['attributes']['support'] = support_geo_compas_mesh.to_data()
+        if self.support != type({}):
+            support_geo_rhino_mesh = RhinoMesh.from_geometry(self.support)
+            support_geo_compas_mesh = support_geo_rhino_mesh.to_compas()
+            d['attributes']['support'] = support_geo_compas_mesh.to_data()
 
-        target_geo_rhino_mesh = RhinoMesh.from_geometry(self.target_geo)
-        target_geo_compas_mesh = target_geo_rhino_mesh.to_compas()
-        d['attributes']['target_geo'] = target_geo_compas_mesh.to_data()
+        if self.target_geo != type({}):
+            target_geo_rhino_mesh = RhinoMesh.from_geometry(self.target_geo)
+            target_geo_compas_mesh = target_geo_rhino_mesh.to_compas()
+            d['attributes']['target_geo'] = target_geo_compas_mesh.to_data()
 
         # so we need to trigger that for elements stored in nodes
         node = {}
